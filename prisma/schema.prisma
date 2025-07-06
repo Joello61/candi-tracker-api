@@ -1,0 +1,229 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+// Looking for ways to speed up your queries, or scale easily with your serverless or edge functions?
+// Try Prisma Accelerate: https://pris.ly/cli/accelerate-init
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id                    String                @id @default(cuid())
+  email                 String                @unique
+  password              String
+  name                  String
+  role                  UserRole              @default(USER)
+  avatar                String?               // URL ou chemin vers l'avatar
+  isActive              Boolean               @default(true)
+  emailVerified         Boolean               @default(false)
+  lastLoginAt           DateTime?
+  
+  // Relations existantes
+  applications          Application[]
+  notifications         Notification[]
+  notificationSettings  NotificationSetting?
+  
+  // Nouvelles relations
+  settings              UserSettings?
+  
+  createdAt             DateTime              @default(now())
+  updatedAt             DateTime              @updatedAt
+
+  @@map("users")
+}
+
+model UserSettings {
+  id          String   @id @default(cuid())
+  userId      String   @unique
+  
+  // Préférences d'affichage
+  theme       String   @default("light")     // light, dark, system
+  language    String   @default("fr")        // fr, en, es, etc.
+  timezone    String   @default("Europe/Paris")
+  dateFormat  String   @default("dd/MM/yyyy") // dd/MM/yyyy, MM/dd/yyyy, yyyy-MM-dd
+  timeFormat  String   @default("24h")       // 24h, 12h
+  
+  // Préférences d'interface
+  sidebarCollapsed      Boolean @default(false)
+  itemsPerPage          Int     @default(10)
+  defaultApplicationView String @default("list") // list, grid, cards
+  
+  // Préférences de dashboard
+  showWelcomeMessage    Boolean @default(true)
+  defaultDashboardTab   String  @default("overview")
+  
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@map("user_settings")
+}
+
+model Application {
+  id           String            @id @default(cuid())
+  userId       String
+  company      String
+  position     String
+  status       ApplicationStatus @default(APPLIED)
+  appliedAt    DateTime          @default(now())
+  notes        String?
+  salary       String?
+  location     String?
+  jobUrl       String?
+  contactName  String?
+  contactEmail String?
+  
+  user         User              @relation(fields: [userId], references: [id], onDelete: Cascade)
+  interviews   Interview[]
+  documents    Document[]
+  
+  createdAt    DateTime          @default(now())
+  updatedAt    DateTime          @updatedAt
+
+  @@map("applications")
+}
+
+model Interview {
+  id            String        @id @default(cuid())
+  applicationId String
+  type          InterviewType
+  scheduledAt   DateTime
+  duration      Int?          // en minutes
+  notes         String?
+  feedback      String?
+  interviewers  String[]
+  
+  application   Application   @relation(fields: [applicationId], references: [id], onDelete: Cascade)
+  
+  createdAt     DateTime      @default(now())
+  updatedAt     DateTime      @updatedAt
+
+  @@map("interviews")
+}
+
+model Document {
+  id            String      @id @default(cuid())
+  applicationId String
+  name          String
+  type          DocumentType
+  url           String
+  size          Int?
+  
+  application   Application @relation(fields: [applicationId], references: [id], onDelete: Cascade)
+  
+  createdAt     DateTime    @default(now())
+  updatedAt     DateTime    @updatedAt
+
+  @@map("documents")
+}
+
+model Notification {
+  id          String            @id @default(cuid())
+  userId      String
+  type        NotificationType
+  title       String
+  message     String
+  data        Json?             // Données additionnelles (JSON)
+  isRead      Boolean           @default(false)
+  readAt      DateTime?
+  actionUrl   String?           // URL pour l'action
+  priority    NotificationPriority @default(NORMAL)
+  
+  user        User              @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  createdAt   DateTime          @default(now())
+  updatedAt   DateTime          @updatedAt
+
+  @@map("notifications")
+}
+
+model NotificationSetting {
+  id                String   @id @default(cuid())
+  userId            String   @unique
+  
+  // Paramètres généraux
+  emailEnabled      Boolean  @default(true)
+  smsEnabled        Boolean  @default(false)
+  pushEnabled       Boolean  @default(true)
+  
+  // Types de notifications
+  interviewReminders    Boolean @default(true)
+  applicationFollowUps  Boolean @default(true)
+  weeklyReports        Boolean @default(true)
+  deadlineAlerts       Boolean @default(true)
+  statusUpdates        Boolean @default(true)
+  
+  // Timing des rappels (en minutes avant l'événement)
+  reminderTiming1      Int     @default(1440)  // 24h avant
+  reminderTiming2      Int     @default(60)    // 1h avant
+  reminderTiming3      Int     @default(15)    // 15min avant
+  
+  // Informations de contact
+  phoneNumber          String?
+  
+  user              User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  @@map("notification_settings")
+}
+
+// Énumérations existantes
+enum ApplicationStatus {
+  APPLIED
+  UNDER_REVIEW
+  INTERVIEW_SCHEDULED
+  INTERVIEWED
+  OFFER_RECEIVED
+  REJECTED
+  ACCEPTED
+  WITHDRAWN
+}
+
+enum InterviewType {
+  PHONE
+  VIDEO
+  ONSITE
+  TECHNICAL
+  HR
+  FINAL
+}
+
+enum DocumentType {
+  CV
+  COVER_LETTER
+  PORTFOLIO
+  CERTIFICATE
+  OTHER
+}
+
+enum NotificationType {
+  INTERVIEW_REMINDER
+  APPLICATION_FOLLOW_UP
+  DEADLINE_ALERT
+  STATUS_UPDATE
+  WEEKLY_REPORT
+  SYSTEM_NOTIFICATION
+  ACHIEVEMENT
+}
+
+enum NotificationPriority {
+  LOW
+  NORMAL
+  HIGH
+  URGENT
+}
+
+// Nouvelle énumération pour les rôles
+enum UserRole {
+  USER
+  ADMIN
+}
