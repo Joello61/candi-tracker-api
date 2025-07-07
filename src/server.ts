@@ -66,6 +66,12 @@ app.get('/api/test-db', async (req, res) => {
   }
 });
 
+app.use((req, res, next) => {
+  res.setHeader('Cross-Origin-Resource-Policy', 'cross-origin');
+  next();
+});
+
+
 app.use('/uploads', express.static(path.join(process.cwd(), 'uploads')));
 
 // Routes API
