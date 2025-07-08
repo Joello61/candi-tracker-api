@@ -12,8 +12,8 @@ import applicationRoutes from './routes/applicationRoutes';
 import interviewRoutes from './routes/interviewRoutes';
 import documentRoutes from './routes/documentRoutes';
 import notificationRoutes from './routes/notificationRoutes';
-import userRoutes from './routes/userRoutes';           // ← Nouveau
-import adminRoutes from './routes/adminRoutes';         // ← Nouveau
+import userRoutes from './routes/userRoutes';
+import adminRoutes from './routes/adminRoutes';
 import path from 'path';
 import { handleUploadErrors } from './middleware/uploadErrorHandler';
 import { SchedulerService } from './services/schedulerService';
@@ -85,9 +85,9 @@ app.use('/api/documents', documentRoutes);
 
 app.use('/api/notifications', notificationRoutes);
 
-app.use('/api/users', userRoutes);                     // ← Nouveau
+app.use('/api/users', userRoutes);
 
-app.use('/api/admin', adminRoutes);                    // ← Nouveau
+app.use('/api/admin', adminRoutes);
 
 // Gestion des erreurs 404
 app.use((req, res) => {

@@ -5,8 +5,8 @@ export const uploadDocumentSchema = z.object({
   applicationId: z.string()
     .min(1, 'L\'ID de candidature est requis'),
   name: z.string()
-    .min(1, 'Le nom du document est requis')
-    .max(255, 'Le nom ne peut pas dépasser 255 caractères'),
+    .max(255, 'Le nom ne peut pas dépasser 255 caractères')
+    .optional(),
   type: z.nativeEnum(DocumentType, {
     errorMap: () => ({ message: 'Type de document invalide' })
   }).optional(),
