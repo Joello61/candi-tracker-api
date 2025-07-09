@@ -14,7 +14,7 @@ export class SchedulerService {
     this.startWeeklyReports();
     this.startCleanupJobs();
     
-    console.log('✅ Tous les jobs de notification sont démarrés');
+    console.log('Tous les jobs de notification sont démarrés');
   }
 
   // Arrêter tous les crons
@@ -22,7 +22,7 @@ export class SchedulerService {
     this.tasks.forEach((task, name) => {
       task.stop();
       this.jobStatus.set(name, false); // Marquer comme arrêté
-      console.log(`❌ Job arrêté: ${name}`);
+      console.log(`Job arrêté: ${name}`);
     });
     this.tasks.clear();
     this.jobStatus.clear();
@@ -37,7 +37,7 @@ export class SchedulerService {
     this.tasks.set('interviewReminders', task);
     this.jobStatus.set('interviewReminders', true); // Marquer comme démarré
     task.start();
-    console.log('📅 Job rappels d\'entretiens démarré (toutes les 15 min)');
+    console.log('Job rappels d\'entretiens démarré (toutes les 15 min)');
   }
 
   // Suivi des candidatures - tous les jours à 10h
@@ -49,7 +49,7 @@ export class SchedulerService {
     this.tasks.set('applicationFollowUps', task);
     this.jobStatus.set('applicationFollowUps', true); // Marquer comme démarré
     task.start();
-    console.log('📋 Job suivi candidatures démarré (10h tous les jours)');
+    console.log('Job suivi candidatures démarré (10h tous les jours)');
   }
 
   // Rapports hebdomadaires - dimanche à 18h
@@ -61,7 +61,7 @@ export class SchedulerService {
     this.tasks.set('weeklyReports', task);
     this.jobStatus.set('weeklyReports', true); // Marquer comme démarré
     task.start();
-    console.log('📊 Job rapports hebdomadaires démarré (dimanche 18h)');
+    console.log('Job rapports hebdomadaires démarré (dimanche 18h)');
   }
 
   // Nettoyage - tous les jours à 2h du matin
@@ -80,7 +80,7 @@ export class SchedulerService {
   private static async checkInterviewReminders(): Promise<void> {
     try {
       const now = new Date();
-      console.log(`🔄 Vérification des rappels d'entretiens - ${now.toISOString()}`);
+      console.log(`Vérification des rappels d'entretiens - ${now.toISOString()}`);
       
       // Récupérer tous les utilisateurs avec leurs paramètres
       const users = await prisma.user.findMany({
@@ -123,7 +123,7 @@ export class SchedulerService {
         }
       }
     } catch (error) {
-      console.error('❌ Erreur vérification rappels entretiens:', error);
+      console.error('Erreur vérification rappels entretiens:', error);
     }
   }
 
@@ -142,12 +142,12 @@ export class SchedulerService {
 
       const priority = minutesUntil <= 60 ? NotificationPriority.HIGH : NotificationPriority.NORMAL;
 
-      console.log(`📅 Envoi rappel entretien: ${interview.application.company} dans ${timeUntil} pour utilisateur ${userId}`);
+      console.log(`Envoi rappel entretien: ${interview.application.company} dans ${timeUntil} pour utilisateur ${userId}`);
 
       await NotificationService.sendNotification(
         userId,
         NotificationType.INTERVIEW_REMINDER,
-        `🎯 Entretien ${interview.application.company} dans ${timeUntil}`,
+        `Entretien ${interview.application.company} dans ${timeUntil}`,
         `Votre entretien ${interview.type} chez ${interview.application.company} approche !`,
         {
           company: interview.application.company,
@@ -163,7 +163,7 @@ export class SchedulerService {
         `/applications/${interview.applicationId}`
       );
     } catch (error) {
-      console.error('❌ Erreur envoi rappel entretien:', error);
+      console.error('Erreur envoi rappel entretien:', error);
     }
   }
 
@@ -173,7 +173,7 @@ export class SchedulerService {
       const now = new Date();
       const followUpThreshold = new Date(now.getTime() - (7 * 24 * 60 * 60 * 1000)); // 7 jours
       
-      console.log(`🔄 Vérification des suivis de candidatures - ${now.toISOString()}`);
+      console.log(`Vérification des suivis de candidatures - ${now.toISOString()}`);
 
       const users = await prisma.user.findMany({
         include: { notificationSettings: true }
@@ -198,12 +198,12 @@ export class SchedulerService {
           
           // Envoyer un rappel tous les 7 jours
           if (daysSince % 7 === 0) {
-            console.log(`📋 Envoi rappel suivi: ${application.company} (${daysSince} jours) pour utilisateur ${user.id}`);
+            console.log(`Envoi rappel suivi: ${application.company} (${daysSince} jours) pour utilisateur ${user.id}`);
             
             await NotificationService.sendNotification(
               user.id,
               NotificationType.APPLICATION_FOLLOW_UP,
-              `📋 Suivi candidature ${application.company}`,
+              `Suivi candidature ${application.company}`,
               `Il serait peut-être temps de faire un suivi pour votre candidature !`,
               {
                 company: application.company,
@@ -218,7 +218,7 @@ export class SchedulerService {
         }
       }
     } catch (error) {
-      console.error('❌ Erreur vérification suivi candidatures:', error);
+      console.error('Erreur vérification suivi candidatures:', error);
     }
   }
 
@@ -229,7 +229,7 @@ export class SchedulerService {
       const weekStart = new Date(now);
       weekStart.setDate(now.getDate() - 7);
       
-      console.log(`📊 Génération des rapports hebdomadaires - ${now.toISOString()}`);
+      console.log(`Génération des rapports hebdomadaires - ${now.toISOString()}`);
 
       const users = await prisma.user.findMany({
         include: { notificationSettings: true }
@@ -277,12 +277,12 @@ export class SchedulerService {
           }),
         }));
 
-        console.log(`📧 Envoi rapport hebdomadaire pour utilisateur ${user.id}: ${newApplications} candidatures, ${interviews} entretiens`);
+        console.log(`Envoi rapport hebdomadaire pour utilisateur ${user.id}: ${newApplications} candidatures, ${interviews} entretiens`);
 
         await NotificationService.sendNotification(
           user.id,
           NotificationType.WEEKLY_REPORT,
-          '📊 Votre rapport hebdomadaire',
+          'Votre rapport hebdomadaire',
           `Cette semaine: ${newApplications} candidatures, ${interviews} entretiens programmés`,
           {
             newApplications,
@@ -294,14 +294,14 @@ export class SchedulerService {
         );
       }
     } catch (error) {
-      console.error('❌ Erreur envoi rapports hebdomadaires:', error);
+      console.error('Erreur envoi rapports hebdomadaires:', error);
     }
   }
 
   // Tâches de nettoyage
   private static async runCleanupJobs(): Promise<void> {
     try {
-      console.log(`🧹 Démarrage du nettoyage - ${new Date().toISOString()}`);
+      console.log(`Démarrage du nettoyage - ${new Date().toISOString()}`);
       
       const users = await prisma.user.findMany();
       let totalCleaned = 0;
@@ -312,9 +312,9 @@ export class SchedulerService {
         totalCleaned += cleaned;
       }
       
-      console.log(`🧹 Nettoyage terminé: ${totalCleaned} notifications supprimées`);
+      console.log(`Nettoyage terminé: ${totalCleaned} notifications supprimées`);
     } catch (error) {
-      console.error('❌ Erreur nettoyage:', error);
+      console.error('Erreur nettoyage:', error);
     }
   }
 
@@ -349,11 +349,11 @@ export class SchedulerService {
       return;
     }
 
-    console.log(`⏰ Notification programmée pour ${executeAt.toISOString()} (dans ${Math.round(delay / 1000 / 60)} minutes)`);
+    console.log(`Notification programmée pour ${executeAt.toISOString()} (dans ${Math.round(delay / 1000 / 60)} minutes)`);
 
     // Programmer avec setTimeout
     setTimeout(async () => {
-      console.log(`⏰ Exécution notification programmée: ${title}`);
+      console.log(`Exécution notification programmée: ${title}`);
       await NotificationService.sendNotification(userId, type, title, message, data, priority);
     }, delay);
   }
@@ -364,10 +364,10 @@ export class SchedulerService {
     if (task) {
       task.stop();
       this.jobStatus.set(jobName, false); // Marquer comme arrêté
-      console.log(`❌ Job arrêté: ${jobName}`);
+      console.log(`Job arrêté: ${jobName}`);
       return true;
     }
-    console.warn(`⚠️ Job non trouvé: ${jobName}`);
+    console.warn(`Job non trouvé: ${jobName}`);
     return false;
   }
 
@@ -377,10 +377,10 @@ export class SchedulerService {
     if (task) {
       task.start();
       this.jobStatus.set(jobName, true); // Marquer comme démarré
-      console.log(`✅ Job redémarré: ${jobName}`);
+      console.log(`Job redémarré: ${jobName}`);
       return true;
     }
-    console.warn(`⚠️ Job non trouvé: ${jobName}`);
+    console.warn(`Job non trouvé: ${jobName}`);
     return false;
   }
 
@@ -447,7 +447,7 @@ export class SchedulerService {
   // Forcer l'exécution d'un job immédiatement (pour les tests)
   static async forceRunJob(jobName: string): Promise<boolean> {
     try {
-      console.log(`🔧 Exécution forcée du job: ${jobName}`);
+      console.log(`Exécution forcée du job: ${jobName}`);
       
       switch (jobName) {
         case 'interviewReminders':
@@ -463,14 +463,14 @@ export class SchedulerService {
           await this.runCleanupJobs();
           break;
         default:
-          console.warn(`⚠️ Job inconnu: ${jobName}`);
+          console.warn(`Job inconnu: ${jobName}`);
           return false;
       }
       
-      console.log(`✅ Job ${jobName} exécuté avec succès`);
+      console.log(`Job ${jobName} exécuté avec succès`);
       return true;
     } catch (error) {
-      console.error(`❌ Erreur lors de l'exécution forcée du job ${jobName}:`, error);
+      console.error(`Erreur lors de l'exécution forcée du job ${jobName}:`, error);
       return false;
     }
   }

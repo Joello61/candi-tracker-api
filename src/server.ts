@@ -267,7 +267,7 @@ const performSecurityChecks = (): boolean => {
   return allGood;
 };
 
-// ===== DÉMARRAGE DU SERVEUR =====
+// DÉMARRAGE DU SERVEUR
 const startServer = async () => {
   try {
     // Vérifications de sécurité
