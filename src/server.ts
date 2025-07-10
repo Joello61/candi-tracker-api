@@ -1,6 +1,7 @@
 import express from 'express';
 import cors from 'cors';
 import helmet from 'helmet';
+import passport from './config/passport'; // Import de notre configuration Passport
 import { config } from './config/env';
 import { prisma } from './config/database';
 import { errorHandler } from './middleware/errorHandler';
@@ -94,6 +95,10 @@ app.use(cors({
   ]
 }));
 
+// ===== INITIALISATION PASSPORT (sans sessions) =====
+app.use(passport.initialize());
+// PAS DE passport.session() car on utilise JWT uniquement
+
 // BODY PARSING AVEC SÉCURITÉ
 app.use(express.json({ 
   limit: '10mb',
@@ -136,7 +141,11 @@ app.get('/api/health', (req, res) => {
       rateLimiting: 'active',
       recaptcha: checkRecaptchaConfig() ? 'configured' : 'missing',
       cors: 'enforced',
-      helmet: 'active'
+      helmet: 'active',
+      oauth: {
+        google: !!(config.oauth.google.clientId && config.oauth.google.clientSecret),
+        linkedin: !!(config.oauth.linkedin.clientId && config.oauth.linkedin.clientSecret)
+      }
     }
   });
 });
@@ -169,7 +178,7 @@ app.use('/uploads', (req, res, next) => {
 
 // ROUTES API AVEC PROTECTION
 
-// Routes d'authentification (déjà protégées par rate limiting dans authRoutes)
+// Routes d'authentification (maintenant avec OAuth)
 app.use('/api/auth', authRoutes);
 
 // Routes applicatives (protection générale)
@@ -213,9 +222,9 @@ const performSecurityChecks = (): boolean => {
   
   // Vérifier reCAPTCHA
   if (checkRecaptchaConfig()) {
-    console.log('Configuration reCAPTCHA valide');
+    console.log('✓ Configuration reCAPTCHA valide');
   } else {
-    console.warn('Configuration reCAPTCHA manquante ou invalide');
+    console.warn('⚠ Configuration reCAPTCHA manquante ou invalide');
     if (config.nodeEnv === 'production') {
       allGood = false;
     }
@@ -230,20 +239,34 @@ const performSecurityChecks = (): boolean => {
   
   for (const varName of criticalVars) {
     if (!process.env[varName]) {
-      console.error(`Variable d'environnement manquante: ${varName}`);
+      console.error(`✗ Variable d'environnement manquante: ${varName}`);
       allGood = false;
     } else {
-      console.log(`${varName} configuré`);
+      console.log(`✓ ${varName} configuré`);
     }
   }
   
   // Vérifier la sécurité JWT
   const jwtSecret = process.env.JWT_SECRET;
   if (jwtSecret && jwtSecret.length < 32) {
-    console.warn('JWT_SECRET trop court (< 32 caractères)');
+    console.warn('⚠ JWT_SECRET trop court (< 32 caractères)');
     if (config.nodeEnv === 'production') {
       allGood = false;
     }
+  }
+  
+  // Vérifier la configuration OAuth
+  console.log('\nVérification OAuth...');
+  if (config.oauth.google.clientId && config.oauth.google.clientSecret) {
+    console.log('✓ Google OAuth configuré');
+  } else {
+    console.warn('⚠ Google OAuth non configuré');
+  }
+  
+  if (config.oauth.linkedin.clientId && config.oauth.linkedin.clientSecret) {
+    console.log('✓ LinkedIn OAuth configuré');
+  } else {
+    console.warn('⚠ LinkedIn OAuth non configuré');
   }
   
   // Vérifier l'environnement de production
@@ -255,15 +278,15 @@ const performSecurityChecks = (): boolean => {
     
     for (const { name, check } of productionChecks) {
       if (check) {
-        console.log(`${name} configuré pour la production`);
+        console.log(`✓ ${name} configuré pour la production`);
       } else {
-        console.error(`${name} non configuré pour la production`);
+        console.error(`✗ ${name} non configuré pour la production`);
         allGood = false;
       }
     }
   }
   
-  console.log(allGood ? 'Toutes les vérifications passées\n' : 'Certaines vérifications ont échoué\n');
+  console.log(allGood ? '✓ Toutes les vérifications passées\n' : '✗ Certaines vérifications ont échoué\n');
   return allGood;
 };
 
@@ -280,22 +303,30 @@ const startServer = async () => {
     
     // Connexion base de données
     await prisma.$connect();
-    console.log('Connexion à la base de données établie');
+    console.log('✓ Connexion à la base de données établie');
     
     app.listen(config.port, () => {
-      console.log(`Serveur démarré sur le port ${config.port}`);
-      console.log(`Environnement: ${config.nodeEnv}`);
-      console.log(`Frontend URL: ${config.frontendUrl}`);
-      console.log(`Sécurité: Rate limiting + Helmet + reCAPTCHA`);
-      console.log(`Health check: http://localhost:${config.port}/api/health`);
+      console.log(`🚀 Serveur démarré sur le port ${config.port}`);
+      console.log(`📍 Environnement: ${config.nodeEnv}`);
+      console.log(`🌐 Frontend URL: ${config.frontendUrl}`);
+      console.log(`🔒 Sécurité: Rate limiting + Helmet + reCAPTCHA + OAuth`);
+      console.log(`❤️ Health check: http://localhost:${config.port}/api/health`);
       
       // Routes principales
-      console.log(`\nRoutes d'authentification (protégées par rate limiting + reCAPTCHA):`);
+      console.log(`\n🔐 Routes d'authentification:`);
       console.log(`   POST http://localhost:${config.port}/api/auth/register`);
       console.log(`   POST http://localhost:${config.port}/api/auth/login`);
       console.log(`   GET  http://localhost:${config.port}/api/auth/profile`);
       
-      console.log(`\nRoutes applicatives (protégées par rate limiting):`);
+      console.log(`\n🔗 Routes OAuth:`);
+      console.log(`   GET  http://localhost:${config.port}/api/auth/google`);
+      console.log(`   GET  http://localhost:${config.port}/api/auth/google/callback`);
+      console.log(`   GET  http://localhost:${config.port}/api/auth/linkedin`);
+      console.log(`   GET  http://localhost:${config.port}/api/auth/linkedin/callback`);
+      console.log(`   POST http://localhost:${config.port}/api/auth/link-social`);
+      console.log(`   POST http://localhost:${config.port}/api/auth/unlink-social`);
+      
+      console.log(`\n📊 Routes applicatives:`);
       console.log(`   GET/POST http://localhost:${config.port}/api/applications`);
       console.log(`   GET      http://localhost:${config.port}/api/applications/stats`);
       console.log(`   GET/POST http://localhost:${config.port}/api/interviews`);
@@ -303,12 +334,12 @@ const startServer = async () => {
       console.log(`   POST     http://localhost:${config.port}/api/documents/upload`);
       console.log(`   GET      http://localhost:${config.port}/api/notifications`);
       
-      console.log(`\nRoutes utilisateur:`);
+      console.log(`\n👤 Routes utilisateur:`);
       console.log(`   GET/PUT  http://localhost:${config.port}/api/users/profile`);
       console.log(`   POST     http://localhost:${config.port}/api/users/change-password`);
       console.log(`   POST     http://localhost:${config.port}/api/users/upload-avatar`);
       
-      console.log(`\nRoutes admin (protection renforcée):`);
+      console.log(`\n🛡️ Routes admin:`);
       console.log(`   GET      http://localhost:${config.port}/api/admin/users`);
       console.log(`   GET      http://localhost:${config.port}/api/admin/stats`);
       console.log(`   PUT      http://localhost:${config.port}/api/admin/users/:id/role`);
@@ -317,12 +348,12 @@ const startServer = async () => {
       const startJobs = process.env.START_SCHEDULER === 'true' || config.nodeEnv === 'production';
       if (startJobs) {
         SchedulerService.startAllJobs();
-        console.log('\nTâches planifiées démarrées');
+        console.log('\n⏰ Tâches planifiées démarrées');
       } else {
-        console.log('\nTâches planifiées non démarrées (pour démarrer: START_SCHEDULER=true)');
+        console.log('\n⏰ Tâches planifiées non démarrées (pour démarrer: START_SCHEDULER=true)');
       }
       
-      console.log('\nServeur prêt et sécurisé !');
+      console.log('\n🎉 Serveur prêt et sécurisé avec OAuth !');
     });
     
   } catch (error) {

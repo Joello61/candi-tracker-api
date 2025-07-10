@@ -18,12 +18,26 @@ for (const [key, value] of Object.entries(requiredEnvVars)) {
 export const config = {
   port: parseInt(process.env.PORT || '3001', 10),
   nodeEnv: process.env.NODE_ENV || 'development',
-  jwtSecret: process.env.JWT_SECRET as string, // On sait qu'elle est définie grâce à la validation ci-dessus
+  jwtSecret: process.env.JWT_SECRET as string,
   jwtExpiresIn: (process.env.JWT_EXPIRES_IN || '7d') as string,
-  databaseUrl: process.env.DATABASE_URL as string, // On sait qu'elle est définie grâce à la validation ci-dessus
+  databaseUrl: process.env.DATABASE_URL as string,
   frontendUrl: process.env.FRONTEND_URL || 'http://localhost:3000',
   rateLimitWindowMs: parseInt(process.env.RATE_LIMIT_WINDOW_MS || '900000', 10),
   rateLimitMaxRequests: parseInt(process.env.RATE_LIMIT_MAX_REQUESTS || '100', 10),
+
+  // Configuration OAuth (pas de session nécessaire)
+  oauth: {
+    google: {
+      clientId: process.env.GOOGLE_CLIENT_ID || '',
+      clientSecret: process.env.GOOGLE_CLIENT_SECRET || '',
+      callbackUrl: process.env.GOOGLE_CALLBACK_URL || 'http://localhost:3001/api/auth/google/callback',
+    },
+    linkedin: {
+      clientId: process.env.LINKEDIN_CLIENT_ID || '',
+      clientSecret: process.env.LINKEDIN_CLIENT_SECRET || '',
+      callbackUrl: process.env.LINKEDIN_CALLBACK_URL || 'http://localhost:3001/api/auth/linkedin/callback',
+    },
+  },
 
   // Configuration email
   emailHost: process.env.EMAIL_HOST || 'smtp.gmail.com',

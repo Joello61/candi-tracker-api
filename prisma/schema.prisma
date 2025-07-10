@@ -16,13 +16,19 @@ datasource db {
 model User {
   id                    String                @id @default(cuid())
   email                 String                @unique
-  password              String
+  password              String?               // Rendre optionnel pour OAuth
   name                  String
   role                  UserRole              @default(USER)
   avatar                String?               // URL ou chemin vers l'avatar
   isActive              Boolean               @default(true)
   emailVerified         Boolean               @default(false)
   lastLoginAt           DateTime?
+  
+  // Nouveaux champs pour OAuth
+  provider              String?               // 'local', 'google', 'linkedin'
+  providerId            String?               // ID unique du provider
+  googleId              String?               @unique
+  linkedinId            String?               @unique
   
   // Relations existantes
   applications          Application[]
