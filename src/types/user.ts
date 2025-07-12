@@ -5,10 +5,10 @@ export interface UserProfile {
   email: string;
   name: string;
   role: UserRole;
-  avatar?: string | null;        // ← Changé pour accepter null
+  avatar?: string | null;
   isActive: boolean;
   emailVerified: boolean;
-  lastLoginAt?: Date | null;     // ← Changé pour accepter null
+  lastLoginAt?: Date | null;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -36,6 +36,8 @@ export interface UserSettings {
   // Préférences de dashboard
   showWelcomeMessage: boolean;
   defaultDashboardTab: string;
+  // NOUVEAU : Sécurité 2FA
+  enabled2FA: boolean;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -43,14 +45,14 @@ export interface UserSettings {
 export interface UpdateProfileRequest {
   name?: string;
   email?: string;
-  avatar?: string | null;        // ← Changé pour accepter null
+  avatar?: string | null;
   // Ces champs ne peuvent être modifiés que par un admin
   role?: UserRole;
   isActive?: boolean;
 }
 
 export interface ChangePasswordRequest {
-  currentPassword: string;
+  currentPassword?: string;
   newPassword: string;
   confirmPassword: string;
 }
@@ -66,6 +68,8 @@ export interface UpdateUserSettingsRequest {
   defaultApplicationView?: string;
   showWelcomeMessage?: boolean;
   defaultDashboardTab?: string;
+  // NOUVEAU : Paramètre 2FA
+  enabled2FA?: boolean;
 }
 
 export interface UserFilters {
@@ -108,10 +112,31 @@ export interface UserActivity {
   id: string;
   name: string;
   email: string;
-  lastLoginAt?: Date | null;     // ← Changé pour accepter null
+  lastLoginAt?: Date | null;
   applicationsCount: number;
   notificationsCount: number;
   createdAt: Date;
+}
+
+// === NOUVEAUX TYPES POUR LA SÉCURITÉ 2FA ===
+
+export interface UserSecuritySettings {
+  enabled2FA: boolean;
+  hasPassword: boolean;
+  linkedAccounts: {
+    google: boolean;
+    linkedin: boolean;
+  };
+  lastLoginAt: Date | null;
+  emailVerified: boolean;
+}
+
+export interface Toggle2FARequest {
+  enabled: boolean;
+}
+
+export interface Toggle2FAResponse {
+  enabled2FA: boolean;
 }
 
 // Types pour les réponses API
@@ -131,6 +156,13 @@ export interface UserSettingsResponse {
   message: string;
   data: {
     settings: UserSettings;
+  };
+}
+
+export interface UserSecurityResponse {
+  message: string;
+  data: {
+    security: UserSecuritySettings;
   };
 }
 

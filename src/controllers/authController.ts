@@ -7,6 +7,7 @@ import { ZodError } from 'zod';
 import passport from 'passport';
 import { config } from '../config/env';
 import { UserRole } from '@prisma/client';
+import VerificationService from '../services/verificationService';
 
 export const register = async (req: Request, res: Response): Promise<void> => {
   try {
@@ -37,7 +38,7 @@ export const register = async (req: Request, res: Response): Promise<void> => {
         email,
         password: hashedPassword,
         provider: 'local',
-        // Les valeurs par défaut sont définies dans le schéma Prisma
+        emailVerified: false, // Par défaut false pour forcer la vérification
       },
       select: {
         id: true,
@@ -49,24 +50,37 @@ export const register = async (req: Request, res: Response): Promise<void> => {
       }
     });
 
-    // Créer les paramètres utilisateur par défaut
+    // Créer les paramètres utilisateur par défaut (avec enabled2FA = false)
     await prisma.userSettings.create({
       data: {
-        userId: user.id
+        userId: user.id,
+        enabled2FA: false // Par défaut désactivé
       }
     });
 
-    // Générer le token avec les nouvelles données
-    const token = generateToken(user.id, user.email, user.role);
+    try {
+      // Créer et envoyer le code de vérification email
+      await VerificationService.createAndSendCode({
+        userId: user.id,
+        type: 'EMAIL_VERIFICATION',
+        method: 'EMAIL',
+        target: user.email
+      });
 
-    const response: AuthResponse = {
-      user,
-      token,
-    };
+      console.log(`Code de vérification email envoyé à ${user.email}`);
+    } catch (emailError) {
+      console.error('Erreur envoi code de vérification:', emailError);
+      // Ne pas faire échouer l'inscription si l'email ne s'envoie pas
+    }
 
+    // NOUVEAU : Rediriger vers la vérification email au lieu de connecter directement
     res.status(201).json({
-      message: 'Compte créé avec succès',
-      data: response
+      message: 'Compte créé avec succès. Veuillez vérifier votre email.',
+      data: {
+        requiresEmailVerification: true,
+        email: user.email,
+        userId: user.id
+      }
     });
 
   } catch (error) {
@@ -96,7 +110,7 @@ export const login = async (req: Request, res: Response): Promise<void> => {
     const validatedData = loginSchema.parse(req.body);
     const { email, password } = validatedData;
 
-    // Chercher l'utilisateur avec les nouveaux champs
+    // Chercher l'utilisateur avec les paramètres 2FA
     const user = await prisma.user.findUnique({
       where: { email },
       select: {
@@ -108,6 +122,11 @@ export const login = async (req: Request, res: Response): Promise<void> => {
         isActive: true,
         emailVerified: true,
         provider: true,
+        settings: {
+          select: {
+            enabled2FA: true
+          }
+        }
       }
     });
 
@@ -148,13 +167,71 @@ export const login = async (req: Request, res: Response): Promise<void> => {
       return;
     }
 
-    // Mettre à jour la dernière connexion
+    // NOUVEAU : Vérifier si l'email est vérifié
+    if (!user.emailVerified) {
+      // Renvoyer un code de vérification
+      try {
+        await VerificationService.createAndSendCode({
+          userId: user.id,
+          type: 'EMAIL_VERIFICATION',
+          method: 'EMAIL',
+          target: user.email
+        });
+      } catch (error) {
+        console.error('Erreur envoi code de vérification:', error);
+      }
+
+      res.status(403).json({
+        error: 'Email non vérifié. Un code de vérification a été envoyé.',
+        code: 'EMAIL_NOT_VERIFIED',
+        data: {
+          requiresEmailVerification: true,
+          email: user.email,
+          userId: user.id
+        }
+      });
+      return;
+    }
+
+    // NOUVEAU : Vérifier si 2FA est activé
+    const enabled2FA = user.settings?.enabled2FA || false;
+
+    if (enabled2FA) {
+      // 2FA activé : envoyer le code et ne pas donner le token final
+      try {
+        await VerificationService.createAndSendCode({
+          userId: user.id,
+          type: 'TWO_FACTOR_AUTH',
+          method: 'EMAIL', // Ou SMS selon les préférences utilisateur
+          target: user.email
+        });
+
+        res.status(200).json({
+          message: 'Code d\'authentification 2FA envoyé',
+          data: {
+            requires2FA: true,
+            userId: user.id,
+            email: user.email, // Masqué côté client si besoin
+            step: '2FA_VERIFICATION'
+          }
+        });
+        return;
+      } catch (error) {
+        console.error('Erreur envoi code 2FA:', error);
+        res.status(500).json({
+          error: 'Erreur lors de l\'envoi du code 2FA',
+          code: 'TWO_FACTOR_SEND_ERROR'
+        });
+        return;
+      }
+    }
+
+    // Pas de 2FA ou 2FA désactivé : connexion directe
     await prisma.user.update({
       where: { id: user.id },
       data: { lastLoginAt: new Date() }
     });
 
-    // Générer le token avec les nouvelles données
     const token = generateToken(user.id, user.email, user.role);
 
     const response: AuthResponse = {
@@ -195,20 +272,220 @@ export const login = async (req: Request, res: Response): Promise<void> => {
   }
 };
 
-// ===== NOUVELLES MÉTHODES OAUTH =====
+// NOUVELLE MÉTHODE : Vérifier le code de vérification email après inscription
+export const verifyEmail = async (req: Request, res: Response): Promise<void> => {
+  try {
+    const { userId, code } = req.body;
 
-// Initier la connexion Google
+    if (!userId || !code) {
+      res.status(400).json({
+        error: 'UserId et code requis',
+        code: 'MISSING_PARAMETERS'
+      });
+      return;
+    }
+
+    // Vérifier le code
+    const verificationResult = await VerificationService.verifyCode(
+      userId,
+      code,
+      'EMAIL_VERIFICATION'
+    );
+
+    if (!verificationResult.success) {
+      res.status(400).json({
+        error: verificationResult.message,
+        code: 'INVALID_VERIFICATION_CODE'
+      });
+      return;
+    }
+
+    // Marquer l'email comme vérifié
+    const user = await prisma.user.update({
+      where: { id: userId },
+      data: { 
+        emailVerified: true,
+        lastLoginAt: new Date()
+      },
+      select: {
+        id: true,
+        email: true,
+        name: true,
+        role: true,
+        isActive: true,
+        emailVerified: true,
+      }
+    });
+
+    // Générer le token pour connecter l'utilisateur
+    const token = generateToken(user.id, user.email, user.role);
+
+    const response: AuthResponse = {
+      user,
+      token,
+    };
+
+    res.json({
+      message: 'Email vérifié avec succès. Vous êtes maintenant connecté.',
+      data: response
+    });
+
+  } catch (error) {
+    console.error('Erreur vérification email:', error);
+    res.status(500).json({
+      error: 'Erreur interne du serveur',
+      code: 'INTERNAL_ERROR'
+    });
+  }
+};
+
+// NOUVELLE MÉTHODE : Vérifier le code 2FA lors de la connexion
+export const verify2FA = async (req: Request, res: Response): Promise<void> => {
+  try {
+    const { userId, code } = req.body;
+
+    if (!userId || !code) {
+      res.status(400).json({
+        error: 'UserId et code requis',
+        code: 'MISSING_PARAMETERS'
+      });
+      return;
+    }
+
+    // Vérifier le code 2FA
+    const verificationResult = await VerificationService.verifyCode(
+      userId,
+      code,
+      'TWO_FACTOR_AUTH'
+    );
+
+    if (!verificationResult.success) {
+      res.status(400).json({
+        error: verificationResult.message,
+        code: 'INVALID_2FA_CODE'
+      });
+      return;
+    }
+
+    // Récupérer l'utilisateur et finaliser la connexion
+    const user = await prisma.user.update({
+      where: { id: userId },
+      data: { lastLoginAt: new Date() },
+      select: {
+        id: true,
+        email: true,
+        name: true,
+        role: true,
+        isActive: true,
+        emailVerified: true,
+      }
+    });
+
+    // Générer le token final
+    const token = generateToken(user.id, user.email, user.role);
+
+    const response: AuthResponse = {
+      user,
+      token,
+    };
+
+    res.json({
+      message: 'Authentification 2FA réussie',
+      data: response
+    });
+
+  } catch (error) {
+    console.error('Erreur vérification 2FA:', error);
+    res.status(500).json({
+      error: 'Erreur interne du serveur',
+      code: 'INTERNAL_ERROR'
+    });
+  }
+};
+
+// NOUVELLE MÉTHODE : Renvoyer un code de vérification
+export const resendVerificationCode = async (req: Request, res: Response): Promise<void> => {
+  try {
+    const { userId, type } = req.body;
+
+    if (!userId || !type) {
+      res.status(400).json({
+        error: 'UserId et type requis',
+        code: 'MISSING_PARAMETERS'
+      });
+      return;
+    }
+
+    // Valider le type
+    const validTypes = ['EMAIL_VERIFICATION', 'TWO_FACTOR_AUTH'];
+    if (!validTypes.includes(type)) {
+      res.status(400).json({
+        error: 'Type de vérification invalide',
+        code: 'INVALID_TYPE'
+      });
+      return;
+    }
+
+    // Récupérer l'utilisateur
+    const user = await prisma.user.findUnique({
+      where: { id: userId },
+      select: { id: true, email: true, name: true }
+    });
+
+    if (!user) {
+      res.status(404).json({
+        error: 'Utilisateur non trouvé',
+        code: 'USER_NOT_FOUND'
+      });
+      return;
+    }
+
+    // Renvoyer le code
+    const result = await VerificationService.createAndSendCode({
+      userId: user.id,
+      type: type as any,
+      method: 'EMAIL',
+      target: user.email
+    });
+
+    if (result.success) {
+      res.json({
+        message: 'Code renvoyé avec succès',
+        data: {
+          nextAllowedAt: result.nextAllowedAt?.toISOString()
+        }
+      });
+    } else {
+      res.status(429).json({
+        error: result.message,
+        code: 'RATE_LIMITED',
+        data: {
+          nextAllowedAt: result.nextAllowedAt?.toISOString()
+        }
+      });
+    }
+
+  } catch (error) {
+    console.error('Erreur renvoi code:', error);
+    res.status(500).json({
+      error: 'Erreur interne du serveur',
+      code: 'INTERNAL_ERROR'
+    });
+  }
+};
+
+// ===== MÉTHODES OAUTH (inchangées) =====
+
 export const googleAuth = (req: Request, res: Response, next: NextFunction) => {
   passport.authenticate('google', {
     scope: ['profile', 'email'],
-    session: false // Pas de session !
+    session: false
   })(req, res, next);
 };
 
-// Callback Google
 export const googleCallback = (req: Request, res: Response, next: NextFunction) => {
   passport.authenticate('google', { 
-    session: false, // Pas de session !
+    session: false,
     failureRedirect: `${config.frontendUrl}/auth/login?error=google_auth_failed` 
   }, async (err, user) => {
     try {
@@ -221,10 +498,7 @@ export const googleCallback = (req: Request, res: Response, next: NextFunction) 
         return res.redirect(`${config.frontendUrl}/auth/login?error=google_auth_failed&message=${encodeURIComponent('Authentification Google échouée')}`);
       }
 
-      // Générer le JWT
       const token = generateToken(user.id, user.email, user.role);
-
-      // Rediriger vers le frontend avec le token
       res.redirect(`${config.frontendUrl}/auth/callback?token=${token}&provider=google`);
     } catch (error) {
       console.error('Erreur lors du callback Google:', error);
@@ -233,18 +507,16 @@ export const googleCallback = (req: Request, res: Response, next: NextFunction) 
   })(req, res, next);
 };
 
-// Initier la connexion LinkedIn
 export const linkedinAuth = (req: Request, res: Response, next: NextFunction) => {
   passport.authenticate('linkedin', {
     scope: ['openid', 'profile', 'email'],
-    session: false // Pas de session !
+    session: false
   })(req, res, next);
 };
 
-// Callback LinkedIn
 export const linkedinCallback = (req: Request, res: Response, next: NextFunction) => {
   passport.authenticate('linkedin', { 
-    session: false, // Pas de session !
+    session: false,
     failureRedirect: `${config.frontendUrl}/auth/login?error=linkedin_auth_failed` 
   }, async (err: { message: string | number | boolean; }, user: { id: string; email: string; role: UserRole; }) => {
     try {
@@ -257,10 +529,7 @@ export const linkedinCallback = (req: Request, res: Response, next: NextFunction
         return res.redirect(`${config.frontendUrl}/auth/login?error=linkedin_auth_failed&message=${encodeURIComponent('Authentification LinkedIn échouée')}`);
       }
 
-      // Générer le JWT
       const token = generateToken(user.id, user.email, user.role);
-
-      // Rediriger vers le frontend avec le token
       res.redirect(`${config.frontendUrl}/auth/callback?token=${token}&provider=linkedin`);
     } catch (error) {
       console.error('Erreur lors du callback LinkedIn:', error);
@@ -269,7 +538,6 @@ export const linkedinCallback = (req: Request, res: Response, next: NextFunction
   })(req, res, next);
 };
 
-// Méthode pour lier un compte social à un compte existant
 export const linkSocialAccount = async (req: AuthenticatedRequest, res: Response): Promise<void> => {
   try {
     if (!req.user) {
@@ -290,7 +558,6 @@ export const linkSocialAccount = async (req: AuthenticatedRequest, res: Response
       return;
     }
 
-    // Vérifier que le compte social n'est pas déjà lié à un autre utilisateur
     const existingLink = await prisma.user.findFirst({
       where: {
         OR: [
@@ -309,7 +576,6 @@ export const linkSocialAccount = async (req: AuthenticatedRequest, res: Response
       return;
     }
 
-    // Lier le compte social
     const updateData: any = {};
     if (provider === 'google') {
       updateData.googleId = providerId;
@@ -336,7 +602,6 @@ export const linkSocialAccount = async (req: AuthenticatedRequest, res: Response
   }
 };
 
-// Méthode pour délier un compte social
 export const unlinkSocialAccount = async (req: AuthenticatedRequest, res: Response): Promise<void> => {
   try {
     if (!req.user) {
@@ -357,7 +622,6 @@ export const unlinkSocialAccount = async (req: AuthenticatedRequest, res: Respon
       return;
     }
 
-    // Vérifier que l'utilisateur a un moyen de se connecter après déliaison
     const user = await prisma.user.findUnique({
       where: { id: req.user.id },
       select: { password: true, googleId: true, linkedinId: true }
@@ -371,7 +635,6 @@ export const unlinkSocialAccount = async (req: AuthenticatedRequest, res: Respon
       return;
     }
 
-    // Vérifier qu'il reste au moins un moyen de connexion
     const hasPassword = !!user.password;
     const hasGoogle = !!user.googleId;
     const hasLinkedIn = !!user.linkedinId;
@@ -385,7 +648,6 @@ export const unlinkSocialAccount = async (req: AuthenticatedRequest, res: Respon
       return;
     }
 
-    // Délier le compte social
     const updateData: any = {};
     if (provider === 'google') {
       updateData.googleId = null;
@@ -412,7 +674,7 @@ export const unlinkSocialAccount = async (req: AuthenticatedRequest, res: Respon
   }
 };
 
-// ===== MÉTHODES EXISTANTES =====
+// ===== MÉTHODES EXISTANTES (inchangées) =====
 
 export const getProfile = async (req: AuthenticatedRequest, res: Response): Promise<void> => {
   try {
@@ -424,7 +686,6 @@ export const getProfile = async (req: AuthenticatedRequest, res: Response): Prom
       return;
     }
 
-    // Récupérer les informations complètes du profil avec les infos OAuth
     const userProfile = await prisma.user.findUnique({
       where: { id: req.user.id },
       select: {
@@ -452,7 +713,6 @@ export const getProfile = async (req: AuthenticatedRequest, res: Response): Prom
       return;
     }
 
-    // Ajouter les informations sur les comptes liés
     const linkedAccounts = {
       google: !!userProfile.googleId,
       linkedin: !!userProfile.linkedinId,
@@ -488,7 +748,6 @@ export const refreshToken = async (req: AuthenticatedRequest, res: Response): Pr
       return;
     }
 
-    // Vérifier que l'utilisateur existe et est actif
     const user = await prisma.user.findUnique({
       where: { id: req.userId },
       select: { id: true, isActive: true }
@@ -510,7 +769,6 @@ export const refreshToken = async (req: AuthenticatedRequest, res: Response): Pr
       return;
     }
 
-    // Générer un nouveau token avec les données utilisateur
     const userForToken = await prisma.user.findUnique({
       where: { id: req.userId },
       select: { id: true, email: true, role: true }

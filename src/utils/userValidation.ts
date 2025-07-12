@@ -33,7 +33,7 @@ export const updateProfileSchema = z.object({
 export const changePasswordSchema = z.object({
   currentPassword: z
     .string()
-    .min(1, 'Le mot de passe actuel est requis'),
+    .optional(),
   newPassword: z
     .string()
     .min(8, 'Le nouveau mot de passe doit contenir au moins 8 caractères')
@@ -49,7 +49,7 @@ export const changePasswordSchema = z.object({
   path: ['confirmPassword'],
 });
 
-// Validation pour les paramètres utilisateur
+// Validation pour les paramètres utilisateur (AVEC enabled2FA)
 export const updateUserSettingsSchema = z.object({
   theme: z
     .enum(['light', 'dark', 'system'])
@@ -88,6 +88,50 @@ export const updateUserSettingsSchema = z.object({
     .string()
     .min(1, 'Onglet par défaut requis')
     .optional(),
+  // NOUVEAU : Validation pour la 2FA
+  enabled2FA: z
+    .boolean()
+    .optional(),
+});
+
+// NOUVELLE VALIDATION : Toggle 2FA
+export const toggle2FASchema = z.object({
+  enabled: z
+    .boolean({
+      required_error: 'Le paramètre "enabled" est requis',
+      invalid_type_error: 'Le paramètre "enabled" doit être un booléen'
+    })
+});
+
+// NOUVELLES VALIDATIONS : Vérifications d'authentification
+export const verifyEmailSchema = z.object({
+  userId: z
+    .string()
+    .min(1, 'UserId requis'),
+  code: z
+    .string()
+    .length(6, 'Le code doit contenir 6 chiffres')
+    .regex(/^\d{6}$/, 'Le code doit être numérique')
+});
+
+export const verify2FASchema = z.object({
+  userId: z
+    .string()
+    .min(1, 'UserId requis'),
+  code: z
+    .string()
+    .length(6, 'Le code doit contenir 6 chiffres')
+    .regex(/^\d{6}$/, 'Le code doit être numérique')
+});
+
+export const resendCodeSchema = z.object({
+  userId: z
+    .string()
+    .min(1, 'UserId requis'),
+  type: z
+    .enum(['EMAIL_VERIFICATION', 'TWO_FACTOR_AUTH'], {
+      errorMap: () => ({ message: 'Type invalide. Utilisez EMAIL_VERIFICATION ou TWO_FACTOR_AUTH' })
+    })
 });
 
 // Validation pour l'administration des utilisateurs
@@ -166,10 +210,24 @@ export const avatarUploadSchema = z.object({
   })
 });
 
+// NOUVELLES VALIDATIONS : Paramètres de sécurité
+export const securitySettingsSchema = z.object({
+  enabled2FA: z.boolean().optional(),
+  // Futurs paramètres de sécurité peuvent être ajoutés ici
+  // enableEmailNotifications: z.boolean().optional(),
+  // enableSMSNotifications: z.boolean().optional(),
+  // sessionTimeout: z.number().min(5).max(1440).optional(), // en minutes
+});
+
 // Types dérivés des schémas
 export type UpdateProfileData = z.infer<typeof updateProfileSchema>;
 export type ChangePasswordData = z.infer<typeof changePasswordSchema>;
 export type UpdateUserSettingsData = z.infer<typeof updateUserSettingsSchema>;
+export type Toggle2FAData = z.infer<typeof toggle2FASchema>;
+export type VerifyEmailData = z.infer<typeof verifyEmailSchema>;
+export type Verify2FAData = z.infer<typeof verify2FASchema>;
+export type ResendCodeData = z.infer<typeof resendCodeSchema>;
 export type AdminUpdateUserData = z.infer<typeof adminUpdateUserSchema>;
 export type UserFiltersData = z.infer<typeof userFiltersSchema>;
-export type AvatarUploadData = z.infer<typeof avatarUploadSchema>;  
+export type AvatarUploadData = z.infer<typeof avatarUploadSchema>;
+export type SecuritySettingsData = z.infer<typeof securitySettingsSchema>;

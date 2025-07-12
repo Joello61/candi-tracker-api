@@ -16,7 +16,7 @@ export interface AuthenticatedRequest extends Request {
   user?: AuthUser;
 }
 
-// Interface pour la réponse d'authentification
+// Interface pour la réponse d'authentification traditionnelle
 export interface AuthResponse {
   user: {
     id: string;
@@ -29,7 +29,106 @@ export interface AuthResponse {
   token: string;
 }
 
-// Étendre l'interface Express User pour Passport
+// === NOUVEAUX TYPES POUR LA 2FA ===
+
+// Réponse lors de la connexion avec 2FA activée
+export interface Auth2FAResponse {
+  requires2FA: boolean;
+  userId: string;
+  email: string;
+  step: '2FA_VERIFICATION';
+}
+
+// Réponse lors de l'inscription nécessitant une vérification email
+export interface AuthEmailVerificationResponse {
+  requiresEmailVerification: boolean;
+  email: string;
+  userId: string;
+}
+
+// Interface pour les requêtes de vérification
+export interface VerifyEmailRequest {
+  userId: string;
+  code: string;
+}
+
+export interface Verify2FARequest {
+  userId: string;
+  code: string;
+}
+
+export interface ResendCodeRequest {
+  userId: string;
+  type: 'EMAIL_VERIFICATION' | 'TWO_FACTOR_AUTH';
+}
+
+// Réponses unifiées selon le flow d'authentification
+export type LoginResponse = 
+  | { message: string; data: AuthResponse }                          // Connexion directe réussie
+  | { message: string; data: Auth2FAResponse }                       // 2FA requis
+  | { message: string; data: AuthEmailVerificationResponse }         // Email non vérifié
+
+export type RegisterResponse = 
+  | { message: string; data: AuthResponse }                          // Inscription + connexion directe (ancien comportement)
+  | { message: string; data: AuthEmailVerificationResponse }         // Inscription + vérification email requise (nouveau comportement)
+
+// Types pour les étapes du processus d'authentification
+export enum AuthStep {
+  LOGIN = 'LOGIN',
+  EMAIL_VERIFICATION = 'EMAIL_VERIFICATION',
+  TWO_FACTOR_AUTH = 'TWO_FACTOR_AUTH',
+  COMPLETED = 'COMPLETED'
+}
+
+export interface AuthFlowState {
+  step: AuthStep;
+  userId?: string;
+  email?: string;
+  requires2FA?: boolean;
+  requiresEmailVerification?: boolean;
+}
+
+// Types pour les erreurs d'authentification spécifiques
+export enum AuthErrorCode {
+  INVALID_CREDENTIALS = 'INVALID_CREDENTIALS',
+  EMAIL_ALREADY_EXISTS = 'EMAIL_ALREADY_EXISTS',
+  ACCOUNT_DISABLED = 'ACCOUNT_DISABLED',
+  EMAIL_NOT_VERIFIED = 'EMAIL_NOT_VERIFIED',
+  SOCIAL_ACCOUNT_ONLY = 'SOCIAL_ACCOUNT_ONLY',
+  INVALID_VERIFICATION_CODE = 'INVALID_VERIFICATION_CODE',
+  INVALID_2FA_CODE = 'INVALID_2FA_CODE',
+  TWO_FACTOR_SEND_ERROR = 'TWO_FACTOR_SEND_ERROR',
+  RATE_LIMITED = 'RATE_LIMITED',
+  NOT_AUTHENTICATED = 'NOT_AUTHENTICATED',
+  VALIDATION_ERROR = 'VALIDATION_ERROR',
+  INTERNAL_ERROR = 'INTERNAL_ERROR'
+}
+
+export interface AuthError {
+  error: string;
+  code: AuthErrorCode;
+  data?: any;
+}
+
+// Types pour les réponses de vérification
+export interface VerificationSuccessResponse {
+  message: string;
+  data: AuthResponse;
+}
+
+export interface VerificationErrorResponse {
+  error: string;
+  code: AuthErrorCode;
+}
+
+export interface ResendCodeResponse {
+  message: string;
+  data?: {
+    nextAllowedAt?: string;
+  };
+}
+
+// Étendre l'interface Express User pour Passport (OAuth)
 declare global {
   namespace Express {
     interface User {

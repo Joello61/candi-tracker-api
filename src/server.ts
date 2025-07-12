@@ -12,7 +12,6 @@ import { SchedulerService } from './services/schedulerService';
 import { 
   getEnvironmentLimiter, 
   rateLimitLogger,
-  generalLimiter 
 } from './middleware/rateLimiter';
 import { 
   recaptchaMonitoring,
@@ -27,6 +26,7 @@ import documentRoutes from './routes/documentRoutes';
 import notificationRoutes from './routes/notificationRoutes';
 import userRoutes from './routes/userRoutes';
 import adminRoutes from './routes/adminRoutes';
+import verificationRoutes from './routes/verificationRoutes'; // Nouvelles routes
 
 const app = express();
 
@@ -187,6 +187,7 @@ app.use('/api/interviews', interviewRoutes);
 app.use('/api/documents', documentRoutes);
 app.use('/api/notifications', notificationRoutes);
 app.use('/api/users', userRoutes);
+app.use('/api/verification', verificationRoutes); // Routes de vérification
 
 // Routes admin (protection renforcée)
 app.use('/api/admin', adminRoutes);
@@ -325,6 +326,13 @@ const startServer = async () => {
       console.log(`   GET  http://localhost:${config.port}/api/auth/linkedin/callback`);
       console.log(`   POST http://localhost:${config.port}/api/auth/link-social`);
       console.log(`   POST http://localhost:${config.port}/api/auth/unlink-social`);
+
+      console.log(`\n🔢 Routes de vérification:`);
+      console.log(`   GET  http://localhost:${config.port}/api/verification/methods`);
+      console.log(`   POST http://localhost:${config.port}/api/verification/send-code`);
+      console.log(`   POST http://localhost:${config.port}/api/verification/verify-code`);
+      console.log(`   GET  http://localhost:${config.port}/api/verification/rate-limit`);
+      console.log(`   GET  http://localhost:${config.port}/api/verification/history (admin)`);
       
       console.log(`\n📊 Routes applicatives:`);
       console.log(`   GET/POST http://localhost:${config.port}/api/applications`);

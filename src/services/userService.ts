@@ -89,12 +89,17 @@ class UserService {
       throw new Error('USER_NOT_FOUND');
     }
 
-    // Vérifier le mot de passe actuel
+    console.log(user)
+
+    if (user.password !== null) {
+     console.log(user) 
+      // Vérifier le mot de passe actuel
     const bcrypt = require('bcryptjs');
     const isValidPassword = await bcrypt.compare(data.currentPassword, user.password);
     
     if (!isValidPassword) {
       throw new Error('INVALID_CURRENT_PASSWORD');
+    }
     }
 
     // Hacher le nouveau mot de passe
@@ -108,7 +113,7 @@ class UserService {
   }
 
   /**
-   * Récupérer les paramètres d'un utilisateur
+   * Récupérer les paramètres d'un utilisateur (AVEC enabled2FA)
    */
   async getUserSettings(userId: string): Promise<UserSettings> {
     let settings = await prisma.userSettings.findUnique({
@@ -118,7 +123,10 @@ class UserService {
     // Créer des paramètres par défaut si ils n'existent pas
     if (!settings) {
       settings = await prisma.userSettings.create({
-        data: { userId }
+        data: { 
+          userId,
+          enabled2FA: false // Par défaut désactivé
+        }
       });
     }
 
@@ -126,7 +134,7 @@ class UserService {
   }
 
   /**
-   * Mettre à jour les paramètres d'un utilisateur
+   * Mettre à jour les paramètres d'un utilisateur (AVEC enabled2FA)
    */
   async updateUserSettings(
     userId: string, 
@@ -137,9 +145,39 @@ class UserService {
       update: data,
       create: {
         userId,
+        enabled2FA: false, // Par défaut lors de la création
         ...data
       }
     });
+  }
+
+  /**
+   * NOUVELLE MÉTHODE : Activer/désactiver la 2FA
+   */
+  async toggle2FA(userId: string, enabled: boolean): Promise<{ enabled2FA: boolean }> {
+    const settings = await prisma.userSettings.upsert({
+      where: { userId },
+      update: { enabled2FA: enabled },
+      create: {
+        userId,
+        enabled2FA: enabled
+      },
+      select: { enabled2FA: true }
+    });
+
+    return { enabled2FA: settings.enabled2FA };
+  }
+
+  /**
+   * NOUVELLE MÉTHODE : Vérifier si la 2FA est activée pour un utilisateur
+   */
+  async is2FAEnabled(userId: string): Promise<boolean> {
+    const settings = await prisma.userSettings.findUnique({
+      where: { userId },
+      select: { enabled2FA: true }
+    });
+
+    return settings?.enabled2FA || false;
   }
 
   /**
@@ -305,6 +343,49 @@ class UserService {
       take: limit,
       orderBy: { name: 'asc' }
     });
+  }
+
+  /**
+   * NOUVELLE MÉTHODE : Récupérer les paramètres de sécurité d'un utilisateur
+   */
+  async getUserSecuritySettings(userId: string): Promise<{
+    enabled2FA: boolean;
+    hasPassword: boolean;
+    linkedAccounts: {
+      google: boolean;
+      linkedin: boolean;
+    };
+    lastLoginAt: Date | null;
+    emailVerified: boolean;
+  }> {
+    const user = await prisma.user.findUnique({
+      where: { id: userId },
+      select: {
+        password: true,
+        googleId: true,
+        linkedinId: true,
+        lastLoginAt: true,
+        emailVerified: true,
+        settings: {
+          select: { enabled2FA: true }
+        }
+      }
+    });
+
+    if (!user) {
+      throw new Error('USER_NOT_FOUND');
+    }
+
+    return {
+      enabled2FA: user.settings?.enabled2FA || false,
+      hasPassword: !!user.password,
+      linkedAccounts: {
+        google: !!user.googleId,
+        linkedin: !!user.linkedinId
+      },
+      lastLoginAt: user.lastLoginAt,
+      emailVerified: user.emailVerified
+    };
   }
 }
 

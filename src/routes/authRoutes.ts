@@ -4,7 +4,11 @@ import {
   login,
   getProfile,
   refreshToken,
-  // Nouvelles méthodes OAuth
+  // Nouvelles méthodes de vérification
+  verifyEmail,
+  verify2FA,
+  resendVerificationCode,
+  // Méthodes OAuth existantes
   googleAuth,
   googleCallback,
   linkedinAuth,
@@ -28,18 +32,23 @@ router.post(
 
 router.post('/login', authLimiter, validateRecaptchaV2, login);
 
-// ===== ROUTES OAUTH GOOGLE =====
-// Initier l'authentification Google
-router.get('/google', authLimiter, googleAuth);
+// ===== NOUVELLES ROUTES DE VÉRIFICATION =====
 
-// Callback Google (appelé par Google après authentification)
+// Vérifier l'email après inscription
+router.post('/verify-email', authLimiter, verifyEmail);
+
+// Vérifier le code 2FA lors de la connexion
+router.post('/verify-2fa', authLimiter, verify2FA);
+
+// Renvoyer un code de vérification
+router.post('/resend-code', authLimiter, resendVerificationCode);
+
+// ===== ROUTES OAUTH GOOGLE =====
+router.get('/google', authLimiter, googleAuth);
 router.get('/google/callback', googleCallback);
 
 // ===== ROUTES OAUTH LINKEDIN =====
-// Initier l'authentification LinkedIn
 router.get('/linkedin', authLimiter, linkedinAuth);
-
-// Callback LinkedIn (appelé par LinkedIn après authentification)
 router.get('/linkedin/callback', linkedinCallback);
 
 // ===== ROUTES PROTÉGÉES =====

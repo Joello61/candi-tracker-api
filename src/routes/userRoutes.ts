@@ -11,7 +11,10 @@ import {
   deleteAvatar,
   deleteAccount,
   searchUsers,
-  checkEmailAvailability
+  checkEmailAvailability,
+  // NOUVELLES MÉTHODES 2FA
+  toggle2FA,
+  getSecuritySettings
 } from '../controllers/userController';
 import { 
   authenticate, 
@@ -48,9 +51,17 @@ router.put('/profile', requireProfileEditPermission, updateProfile);
 // Gestion du mot de passe
 router.post('/change-password', changePassword);
 
-// Gestion des paramètres
+// Gestion des paramètres généraux
 router.get('/settings', getSettings);
 router.put('/settings', updateSettings);
+
+// === NOUVELLES ROUTES SÉCURITÉ 2FA ===
+
+// Récupérer les paramètres de sécurité (inclut l'état 2FA)
+router.get('/security', getSecuritySettings);
+
+// Activer/désactiver la 2FA
+router.post('/toggle-2fa', toggle2FA);
 
 // Gestion de l'avatar
 router.post('/upload-avatar', avatarUpload.single('avatar'), uploadAvatar);

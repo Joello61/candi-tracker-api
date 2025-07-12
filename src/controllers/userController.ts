@@ -1,40 +1,44 @@
 import { Response } from 'express';
 import { AuthenticatedRequest } from '../types/auth';
-import { userService } from '../services/userService';
-import { 
-  updateProfileSchema, 
-  changePasswordSchema, 
-  updateUserSettingsSchema 
+import userService from '../services/userService';
+import {
+  updateProfileSchema,
+  changePasswordSchema,
+  updateUserSettingsSchema,
+  userFiltersSchema
 } from '../utils/userValidation';
 import { ZodError } from 'zod';
 
 /**
  * Récupérer le profil de l'utilisateur connecté
  */
-export const getProfile = async (
-  req: AuthenticatedRequest,
-  res: Response
-): Promise<void> => {
+export const getProfile = async (req: AuthenticatedRequest, res: Response): Promise<void> => {
   try {
-    const userId = req.userId!;
+    if (!req.user) {
+      res.status(401).json({
+        error: 'Non authentifié',
+        code: 'NOT_AUTHENTICATED'
+      });
+      return;
+    }
 
-    const user = await userService.getUserProfile(userId);
-
-    if (!user) {
+    const profile = await userService.getUserProfile(req.user.id);
+    
+    if (!profile) {
       res.status(404).json({
-        error: 'Utilisateur non trouvé',
-        code: 'USER_NOT_FOUND'
+        error: 'Profil non trouvé',
+        code: 'PROFILE_NOT_FOUND'
       });
       return;
     }
 
     res.json({
       message: 'Profil récupéré avec succès',
-      data: { user }
+      data: { user: profile }
     });
 
   } catch (error) {
-    console.error('Erreur lors de la récupération du profil:', error);
+    console.error('Erreur récupération profil:', error);
     res.status(500).json({
       error: 'Erreur interne du serveur',
       code: 'INTERNAL_ERROR'
@@ -45,21 +49,24 @@ export const getProfile = async (
 /**
  * Mettre à jour le profil de l'utilisateur
  */
-export const updateProfile = async (
-  req: AuthenticatedRequest,
-  res: Response
-): Promise<void> => {
+export const updateProfile = async (req: AuthenticatedRequest, res: Response): Promise<void> => {
   try {
-    const userId = req.userId!;
-    
+    if (!req.user) {
+      res.status(401).json({
+        error: 'Non authentifié',
+        code: 'NOT_AUTHENTICATED'
+      });
+      return;
+    }
+
     // Validation des données
     const validatedData = updateProfileSchema.parse(req.body);
 
-    const updatedUser = await userService.updateUserProfile(userId, validatedData);
+    const updatedProfile = await userService.updateUserProfile(req.user.id, validatedData);
 
     res.json({
       message: 'Profil mis à jour avec succès',
-      data: { user: updatedUser }
+      data: { user: updatedProfile }
     });
 
   } catch (error) {
@@ -76,17 +83,16 @@ export const updateProfile = async (
     }
 
     if (error instanceof Error) {
-      switch (error.message) {
-        case 'EMAIL_ALREADY_EXISTS':
-          res.status(409).json({
-            error: 'Cet email est déjà utilisé',
-            code: 'EMAIL_ALREADY_EXISTS'
-          });
-          return;
+      if (error.message === 'EMAIL_ALREADY_EXISTS') {
+        res.status(409).json({
+          error: 'Cet email est déjà utilisé par un autre compte',
+          code: 'EMAIL_ALREADY_EXISTS'
+        });
+        return;
       }
     }
 
-    console.error('Erreur lors de la mise à jour du profil:', error);
+    console.error('Erreur mise à jour profil:', error);
     res.status(500).json({
       error: 'Erreur interne du serveur',
       code: 'INTERNAL_ERROR'
@@ -97,17 +103,20 @@ export const updateProfile = async (
 /**
  * Changer le mot de passe
  */
-export const changePassword = async (
-  req: AuthenticatedRequest,
-  res: Response
-): Promise<void> => {
+export const changePassword = async (req: AuthenticatedRequest, res: Response): Promise<void> => {
   try {
-    const userId = req.userId!;
-    
+    if (!req.user) {
+      res.status(401).json({
+        error: 'Non authentifié',
+        code: 'NOT_AUTHENTICATED'
+      });
+      return;
+    }
+
     // Validation des données
     const validatedData = changePasswordSchema.parse(req.body);
 
-    await userService.changePassword(userId, validatedData);
+    await userService.changePassword(req.user.id, validatedData);
 
     res.json({
       message: 'Mot de passe modifié avec succès'
@@ -127,23 +136,24 @@ export const changePassword = async (
     }
 
     if (error instanceof Error) {
-      switch (error.message) {
-        case 'USER_NOT_FOUND':
-          res.status(404).json({
-            error: 'Utilisateur non trouvé',
-            code: 'USER_NOT_FOUND'
-          });
-          return;
-        case 'INVALID_CURRENT_PASSWORD':
-          res.status(400).json({
-            error: 'Mot de passe actuel incorrect',
-            code: 'INVALID_CURRENT_PASSWORD'
-          });
-          return;
+      if (error.message === 'USER_NOT_FOUND') {
+        res.status(404).json({
+          error: 'Utilisateur non trouvé',
+          code: 'USER_NOT_FOUND'
+        });
+        return;
+      }
+
+      if (error.message === 'INVALID_CURRENT_PASSWORD') {
+        res.status(400).json({
+          error: 'Mot de passe actuel incorrect',
+          code: 'INVALID_CURRENT_PASSWORD'
+        });
+        return;
       }
     }
 
-    console.error('Erreur lors du changement de mot de passe:', error);
+    console.error('Erreur changement mot de passe:', error);
     res.status(500).json({
       error: 'Erreur interne du serveur',
       code: 'INTERNAL_ERROR'
@@ -152,16 +162,19 @@ export const changePassword = async (
 };
 
 /**
- * Récupérer les paramètres utilisateur
+ * Récupérer les paramètres de l'utilisateur
  */
-export const getSettings = async (
-  req: AuthenticatedRequest,
-  res: Response
-): Promise<void> => {
+export const getSettings = async (req: AuthenticatedRequest, res: Response): Promise<void> => {
   try {
-    const userId = req.userId!;
+    if (!req.user) {
+      res.status(401).json({
+        error: 'Non authentifié',
+        code: 'NOT_AUTHENTICATED'
+      });
+      return;
+    }
 
-    const settings = await userService.getUserSettings(userId);
+    const settings = await userService.getUserSettings(req.user.id);
 
     res.json({
       message: 'Paramètres récupérés avec succès',
@@ -169,7 +182,7 @@ export const getSettings = async (
     });
 
   } catch (error) {
-    console.error('Erreur lors de la récupération des paramètres:', error);
+    console.error('Erreur récupération paramètres:', error);
     res.status(500).json({
       error: 'Erreur interne du serveur',
       code: 'INTERNAL_ERROR'
@@ -178,23 +191,26 @@ export const getSettings = async (
 };
 
 /**
- * Mettre à jour les paramètres utilisateur
+ * Mettre à jour les paramètres de l'utilisateur
  */
-export const updateSettings = async (
-  req: AuthenticatedRequest,
-  res: Response
-): Promise<void> => {
+export const updateSettings = async (req: AuthenticatedRequest, res: Response): Promise<void> => {
   try {
-    const userId = req.userId!;
-    
+    if (!req.user) {
+      res.status(401).json({
+        error: 'Non authentifié',
+        code: 'NOT_AUTHENTICATED'
+      });
+      return;
+    }
+
     // Validation des données
     const validatedData = updateUserSettingsSchema.parse(req.body);
 
-    const settings = await userService.updateUserSettings(userId, validatedData);
+    const updatedSettings = await userService.updateUserSettings(req.user.id, validatedData);
 
     res.json({
       message: 'Paramètres mis à jour avec succès',
-      data: { settings }
+      data: { settings: updatedSettings }
     });
 
   } catch (error) {
@@ -210,7 +226,83 @@ export const updateSettings = async (
       return;
     }
 
-    console.error('Erreur lors de la mise à jour des paramètres:', error);
+    console.error('Erreur mise à jour paramètres:', error);
+    res.status(500).json({
+      error: 'Erreur interne du serveur',
+      code: 'INTERNAL_ERROR'
+    });
+  }
+};
+
+/**
+ * NOUVELLE MÉTHODE : Basculer l'état de la 2FA
+ */
+export const toggle2FA = async (req: AuthenticatedRequest, res: Response): Promise<void> => {
+  try {
+    if (!req.user) {
+      res.status(401).json({
+        error: 'Non authentifié',
+        code: 'NOT_AUTHENTICATED'
+      });
+      return;
+    }
+
+    const { enabled } = req.body;
+
+    if (typeof enabled !== 'boolean') {
+      res.status(400).json({
+        error: 'Le paramètre "enabled" doit être un booléen',
+        code: 'INVALID_PARAMETER'
+      });
+      return;
+    }
+
+    const result = await userService.toggle2FA(req.user.id, enabled);
+
+    res.json({
+      message: `2FA ${enabled ? 'activée' : 'désactivée'} avec succès`,
+      data: result
+    });
+
+  } catch (error) {
+    console.error('Erreur basculement 2FA:', error);
+    res.status(500).json({
+      error: 'Erreur interne du serveur',
+      code: 'INTERNAL_ERROR'
+    });
+  }
+};
+
+/**
+ * NOUVELLE MÉTHODE : Récupérer les paramètres de sécurité
+ */
+export const getSecuritySettings = async (req: AuthenticatedRequest, res: Response): Promise<void> => {
+  try {
+    if (!req.user) {
+      res.status(401).json({
+        error: 'Non authentifié',
+        code: 'NOT_AUTHENTICATED'
+      });
+      return;
+    }
+
+    const securitySettings = await userService.getUserSecuritySettings(req.user.id);
+
+    res.json({
+      message: 'Paramètres de sécurité récupérés avec succès',
+      data: { security: securitySettings }
+    });
+
+  } catch (error) {
+    if (error instanceof Error && error.message === 'USER_NOT_FOUND') {
+      res.status(404).json({
+        error: 'Utilisateur non trouvé',
+        code: 'USER_NOT_FOUND'
+      });
+      return;
+    }
+
+    console.error('Erreur récupération paramètres sécurité:', error);
     res.status(500).json({
       error: 'Erreur interne du serveur',
       code: 'INTERNAL_ERROR'
@@ -221,15 +313,17 @@ export const updateSettings = async (
 /**
  * Upload d'avatar
  */
-export const uploadAvatar = async (
-  req: AuthenticatedRequest,
-  res: Response
-): Promise<void> => {
+export const uploadAvatar = async (req: AuthenticatedRequest, res: Response): Promise<void> => {
   try {
-    const userId = req.userId!;
-    const file = req.file;
+    if (!req.user) {
+      res.status(401).json({
+        error: 'Non authentifié',
+        code: 'NOT_AUTHENTICATED'
+      });
+      return;
+    }
 
-    if (!file) {
+    if (!req.file) {
       res.status(400).json({
         error: 'Aucun fichier fourni',
         code: 'NO_FILE_PROVIDED'
@@ -237,7 +331,7 @@ export const uploadAvatar = async (
       return;
     }
 
-    const result = await userService.uploadAvatar(userId, file);
+    const result = await userService.uploadAvatar(req.user.id, req.file);
 
     res.json({
       message: 'Avatar uploadé avec succès',
@@ -245,32 +339,31 @@ export const uploadAvatar = async (
     });
 
   } catch (error) {
-    console.error('Erreur lors de l\'upload d\'avatar:', error);
-    res.status(500).json({
-      error: 'Erreur interne du serveur',
-      code: 'INTERNAL_ERROR'
-    });
+    uploadErrorHandler(error, req, res, () => {});
   }
 };
 
 /**
  * Supprimer l'avatar
  */
-export const deleteAvatar = async (
-  req: AuthenticatedRequest,
-  res: Response
-): Promise<void> => {
+export const deleteAvatar = async (req: AuthenticatedRequest, res: Response): Promise<void> => {
   try {
-    const userId = req.userId!;
+    if (!req.user) {
+      res.status(401).json({
+        error: 'Non authentifié',
+        code: 'NOT_AUTHENTICATED'
+      });
+      return;
+    }
 
-    await userService.deleteAvatar(userId);
+    await userService.deleteAvatar(req.user.id);
 
     res.json({
       message: 'Avatar supprimé avec succès'
     });
 
   } catch (error) {
-    console.error('Erreur lors de la suppression de l\'avatar:', error);
+    console.error('Erreur suppression avatar:', error);
     res.status(500).json({
       error: 'Erreur interne du serveur',
       code: 'INTERNAL_ERROR'
@@ -279,23 +372,26 @@ export const deleteAvatar = async (
 };
 
 /**
- * Supprimer le compte utilisateur
+ * Supprimer le compte
  */
-export const deleteAccount = async (
-  req: AuthenticatedRequest,
-  res: Response
-): Promise<void> => {
+export const deleteAccount = async (req: AuthenticatedRequest, res: Response): Promise<void> => {
   try {
-    const userId = req.userId!;
+    if (!req.user) {
+      res.status(401).json({
+        error: 'Non authentifié',
+        code: 'NOT_AUTHENTICATED'
+      });
+      return;
+    }
 
-    await userService.deleteAccount(userId);
+    await userService.deleteAccount(req.user.id);
 
     res.json({
       message: 'Compte supprimé avec succès'
     });
 
   } catch (error) {
-    console.error('Erreur lors de la suppression du compte:', error);
+    console.error('Erreur suppression compte:', error);
     res.status(500).json({
       error: 'Erreur interne du serveur',
       code: 'INTERNAL_ERROR'
@@ -304,14 +400,19 @@ export const deleteAccount = async (
 };
 
 /**
- * Rechercher des utilisateurs (pour autocomplete)
+ * Rechercher des utilisateurs
  */
-export const searchUsers = async (
-  req: AuthenticatedRequest,
-  res: Response
-): Promise<void> => {
+export const searchUsers = async (req: AuthenticatedRequest, res: Response): Promise<void> => {
   try {
-    const { q: query, limit = 10 } = req.query;
+    if (!req.user) {
+      res.status(401).json({
+        error: 'Non authentifié',
+        code: 'NOT_AUTHENTICATED'
+      });
+      return;
+    }
+
+    const { q: query, limit = '10' } = req.query;
 
     if (!query || typeof query !== 'string') {
       res.status(400).json({
@@ -321,10 +422,16 @@ export const searchUsers = async (
       return;
     }
 
-    const users = await userService.searchUsers(
-      query, 
-      Math.min(parseInt(limit as string) || 10, 50)
-    );
+    const limitNumber = parseInt(limit as string, 10);
+    if (isNaN(limitNumber) || limitNumber < 1 || limitNumber > 50) {
+      res.status(400).json({
+        error: 'Limite doit être entre 1 et 50',
+        code: 'INVALID_LIMIT'
+      });
+      return;
+    }
+
+    const users = await userService.searchUsers(query, limitNumber);
 
     res.json({
       message: 'Recherche effectuée avec succès',
@@ -332,7 +439,7 @@ export const searchUsers = async (
     });
 
   } catch (error) {
-    console.error('Erreur lors de la recherche d\'utilisateurs:', error);
+    console.error('Erreur recherche utilisateurs:', error);
     res.status(500).json({
       error: 'Erreur interne du serveur',
       code: 'INTERNAL_ERROR'
@@ -343,13 +450,17 @@ export const searchUsers = async (
 /**
  * Vérifier la disponibilité d'un email
  */
-export const checkEmailAvailability = async (
-  req: AuthenticatedRequest,
-  res: Response
-): Promise<void> => {
+export const checkEmailAvailability = async (req: AuthenticatedRequest, res: Response): Promise<void> => {
   try {
+    if (!req.user) {
+      res.status(401).json({
+        error: 'Non authentifié',
+        code: 'NOT_AUTHENTICATED'
+      });
+      return;
+    }
+
     const { email } = req.query;
-    const userId = req.userId!;
 
     if (!email || typeof email !== 'string') {
       res.status(400).json({
@@ -359,7 +470,7 @@ export const checkEmailAvailability = async (
       return;
     }
 
-    const isAvailable = await userService.isEmailAvailable(email, userId);
+    const isAvailable = await userService.isEmailAvailable(email, req.user.id);
 
     res.json({
       message: 'Vérification effectuée',
@@ -370,10 +481,14 @@ export const checkEmailAvailability = async (
     });
 
   } catch (error) {
-    console.error('Erreur lors de la vérification de l\'email:', error);
+    console.error('Erreur vérification email:', error);
     res.status(500).json({
       error: 'Erreur interne du serveur',
       code: 'INTERNAL_ERROR'
     });
   }
 };
+
+function uploadErrorHandler(error: unknown, req: AuthenticatedRequest, res: Response<any, Record<string, any>>, arg3: () => void) {
+  throw new Error('Function not implemented.');
+}

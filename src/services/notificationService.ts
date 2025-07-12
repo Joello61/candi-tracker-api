@@ -1,15 +1,11 @@
 import { prisma } from '../config/database';
-import { createEmailTransporter, emailTemplates } from '../config/email';
 import { createSMSClient, smsTemplates } from '../config/sms';
-import { NotificationWithUser, NotificationStats, PaginatedNotifications, CreateNotificationData, EmailData, SMSData } from '../types/notification';
+import emailService from './emailService'; // 🆕 Import du nouveau service email Resend
+import { NotificationWithUser, NotificationStats, PaginatedNotifications, CreateNotificationData, SMSData } from '../types/notification';
 import { NotificationType, NotificationPriority, NotificationSetting, Notification } from '@prisma/client';
-import handlebars from 'handlebars';
 
 export class NotificationService {
-  // Service email
-  private static emailTransporter = createEmailTransporter();
-  
-  // Service SMS
+  // Service SMS (conservé)
   private static smsClient = createSMSClient();
 
   // Créer une notification interne
@@ -29,31 +25,22 @@ export class NotificationService {
     return notification;
   }
 
-  // Envoyer un email
-  static async sendEmail(emailData: EmailData): Promise<boolean> {
+  // 🆕 Envoyer un email via Resend (remplace l'ancienne méthode)
+  static async sendEmail(to: string, subject: string, html: string, text?: string): Promise<boolean> {
     try {
-      if (!this.emailTransporter) {
-        console.warn('Transporteur email non configuré');
-        return false;
-      }
-
-      await this.emailTransporter.sendMail({
-        from: process.env.EMAIL_FROM || 'Job Tracker <noreply@jobtracker.com>',
-        to: emailData.to,
-        subject: emailData.subject,
-        html: emailData.html,
-        text: emailData.text,
+      return await emailService.sendEmail({
+        to,
+        subject,
+        html,
+        text
       });
-
-      console.log(`Email envoyé à ${emailData.to}`);
-      return true;
     } catch (error) {
-      console.error('Erreur envoi email:', error);
+      console.error('Erreur envoi email via Resend:', error);
       return false;
     }
   }
 
-  // Envoyer un SMS
+  // Envoyer un SMS (conservé)
   static async sendSMS(smsData: SMSData): Promise<boolean> {
     try {
       if (!this.smsClient) {
@@ -75,7 +62,7 @@ export class NotificationService {
     }
   }
 
-  // Envoyer une notification complète (tous canaux)
+  // 🆕 Envoyer une notification complète (mis à jour pour Resend)
   static async sendNotification(
     userId: string,
     type: NotificationType,
@@ -119,20 +106,12 @@ export class NotificationService {
         });
       }
 
-      // Envoyer par email si activé
+      // 🆕 Envoyer par email via Resend si activé
       if (settings?.emailEnabled && this.shouldSendEmail(type, settings)) {
-        const emailHtml = this.generateEmailFromTemplate(type, { title, message, ...data });
-        if (emailHtml) {
-          await this.sendEmail({
-            to: user.email,
-            subject: title,
-            html: emailHtml,
-            text: message,
-          });
-        }
+        await this.sendEmailForType(type, user, data);
       }
 
-      // Envoyer par SMS si activé
+      // Envoyer par SMS si activé (conservé)
       if (settings?.smsEnabled && settings.phoneNumber && this.shouldSendSMS(type, settings)) {
         const smsMessage = this.generateSMSFromTemplate(type, { title, message, ...data });
         if (smsMessage) {
@@ -148,7 +127,168 @@ export class NotificationService {
     }
   }
 
-  // Vérifier si un type de notification est activé
+  // 🆕 Envoyer un email selon le type via le service Resend
+  private static async sendEmailForType(type: NotificationType, user: any, data: any): Promise<void> {
+    try {
+      switch (type) {
+        case NotificationType.INTERVIEW_REMINDER:
+          if (data?.interview) {
+            await emailService.sendInterviewReminder(
+              { id: user.id, name: user.name, email: user.email },
+              data.interview
+            );
+          }
+          break;
+
+        case NotificationType.APPLICATION_FOLLOW_UP:
+          if (data?.application) {
+            await emailService.sendApplicationFollowUp(
+              { id: user.id, name: user.name, email: user.email },
+              data.application
+            );
+          }
+          break;
+
+        case NotificationType.WEEKLY_REPORT:
+          if (data?.stats) {
+            await emailService.sendWeeklyReport(
+              { id: user.id, name: user.name, email: user.email },
+              data.stats
+            );
+          }
+          break;
+
+        case NotificationType.STATUS_UPDATE:
+        case NotificationType.DEADLINE_ALERT:
+        case NotificationType.SYSTEM_NOTIFICATION:
+        case NotificationType.ACHIEVEMENT:
+          // Pour les autres types, envoyer un email générique
+          await emailService.sendEmail({
+            to: user.email,
+            subject: data.title || 'Notification Candi Tracker',
+            html: this.generateGenericEmailHTML(data.title, data.message, user.name),
+            text: data.message
+          });
+          break;
+
+        default:
+          console.warn(`Type de notification email non géré: ${type}`);
+      }
+    } catch (error) {
+      console.error('Erreur envoi email pour type:', type, error);
+    }
+  }
+
+  // 🆕 Générer un email HTML générique pour les notifications simples
+  private static generateGenericEmailHTML(title: string, message: string, userName: string): string {
+    return `
+      <!DOCTYPE html>
+      <html>
+        <head>
+          <meta charset="utf-8">
+          <meta name="viewport" content="width=device-width, initial-scale=1.0">
+          <title>${title}</title>
+        </head>
+        <body style="font-family: Arial, sans-serif; line-height: 1.6; color: #333; max-width: 600px; margin: 0 auto; padding: 20px;">
+          <div style="background: #667eea; padding: 30px; border-radius: 10px; color: white; text-align: center; margin-bottom: 30px;">
+            <h1 style="margin: 0; font-size: 24px;">📋 ${title}</h1>
+          </div>
+          
+          <div style="background: #f8f9fa; padding: 25px; border-radius: 8px; margin-bottom: 25px;">
+            <h2 style="color: #667eea; margin-top: 0;">Bonjour ${userName},</h2>
+            <p>${message}</p>
+          </div>
+          
+          <div style="text-align: center; margin: 30px 0;">
+            <a href="${process.env.FRONTEND_URL}/app/dashboard" 
+               style="background: #667eea; color: white; padding: 15px 30px; text-decoration: none; border-radius: 5px; font-weight: bold; display: inline-block;">
+              📊 Voir mon tableau de bord
+            </a>
+          </div>
+          
+          <div style="border-top: 1px solid #eee; padding-top: 20px; font-size: 14px; color: #666; text-align: center;">
+            <p>L'équipe Candi Tracker</p>
+          </div>
+        </body>
+      </html>
+    `;
+  }
+
+  // 🆕 Méthodes de notifications spécifiques avec Resend
+
+  // Rappel d'entretien
+  static async sendInterviewReminder(userId: string, interviewData: any): Promise<void> {
+    await this.sendNotification(
+      userId,
+      NotificationType.INTERVIEW_REMINDER,
+      '📅 Rappel d\'entretien',
+      `N'oubliez pas votre entretien chez ${interviewData.application?.company}`,
+      { interview: interviewData },
+      NotificationPriority.HIGH
+    );
+  }
+
+  // Suivi de candidature
+  static async sendApplicationFollowUp(userId: string, applicationData: any): Promise<void> {
+    await this.sendNotification(
+      userId,
+      NotificationType.APPLICATION_FOLLOW_UP,
+      '🔔 Suivi de candidature recommandé',
+      `Il est temps de relancer votre candidature chez ${applicationData.company}`,
+      { application: applicationData },
+      NotificationPriority.NORMAL
+    );
+  }
+
+  // Rapport hebdomadaire
+  static async sendWeeklyReport(userId: string, statsData: any): Promise<void> {
+    await this.sendNotification(
+      userId,
+      NotificationType.WEEKLY_REPORT,
+      '📊 Votre rapport hebdomadaire',
+      `Résumé de vos ${statsData.totalApplications} candidatures cette semaine`,
+      { stats: statsData },
+      NotificationPriority.LOW
+    );
+  }
+
+  // Alerte de deadline
+  static async sendDeadlineAlert(userId: string, deadlineData: any): Promise<void> {
+    await this.sendNotification(
+      userId,
+      NotificationType.DEADLINE_ALERT,
+      '⚠️ Deadline approche',
+      deadlineData.message,
+      deadlineData,
+      NotificationPriority.HIGH
+    );
+  }
+
+  // Mise à jour de statut
+  static async sendStatusUpdate(userId: string, statusData: any): Promise<void> {
+    await this.sendNotification(
+      userId,
+      NotificationType.STATUS_UPDATE,
+      '📋 Mise à jour de candidature',
+      statusData.message,
+      statusData,
+      NotificationPriority.NORMAL
+    );
+  }
+
+  // Achievement/succès
+  static async sendAchievement(userId: string, achievementData: any): Promise<void> {
+    await this.sendNotification(
+      userId,
+      NotificationType.ACHIEVEMENT,
+      '🎉 Félicitations !',
+      achievementData.message,
+      achievementData,
+      NotificationPriority.LOW
+    );
+  }
+
+  // Vérifier si un type de notification est activé (conservé)
   private static isNotificationTypeEnabled(type: NotificationType, settings: any): boolean {
     if (!settings) return true; // Par défaut activé si pas de paramètres
 
@@ -168,65 +308,50 @@ export class NotificationService {
     }
   }
 
-  // Vérifier si on doit envoyer un email pour ce type
+  // Vérifier si on doit envoyer un email pour ce type (conservé)
   private static shouldSendEmail(type: NotificationType, settings: any): boolean {
     // Certains types ne sont envoyés que par email
     const emailOnlyTypes = new Set<NotificationType>([
-        NotificationType.WEEKLY_REPORT,
-        NotificationType.APPLICATION_FOLLOW_UP,
+      NotificationType.WEEKLY_REPORT,
+      NotificationType.APPLICATION_FOLLOW_UP,
     ]);
     
-    return emailOnlyTypes.has(type);
+    const alwaysEmailTypes = new Set<NotificationType>([
+      NotificationType.INTERVIEW_REMINDER,
+      NotificationType.STATUS_UPDATE,
+      NotificationType.SYSTEM_NOTIFICATION,
+    ]);
+    
+    return emailOnlyTypes.has(type) || alwaysEmailTypes.has(type);
   }
 
-  // Vérifier si on doit envoyer un SMS pour ce type
+  // Vérifier si on doit envoyer un SMS pour ce type (conservé)
   private static shouldSendSMS(type: NotificationType, settings: any): boolean {
     // SMS seulement pour les rappels urgents
     const smsOnlyTypes = new Set<NotificationType>([
-        NotificationType.INTERVIEW_REMINDER,
-        NotificationType.DEADLINE_ALERT,
+      NotificationType.INTERVIEW_REMINDER,
+      NotificationType.DEADLINE_ALERT,
     ]);
     return smsOnlyTypes.has(type);
   }
 
-  // Générer le HTML d'email à partir d'un template
-  private static generateEmailFromTemplate(type: NotificationType, data: any): string | null {
-    let template;
-    
-    switch (type) {
-      case NotificationType.INTERVIEW_REMINDER:
-        template = emailTemplates.interviewReminder.template;
-        break;
-      case NotificationType.APPLICATION_FOLLOW_UP:
-        template = emailTemplates.applicationFollowUp.template;
-        break;
-      case NotificationType.WEEKLY_REPORT:
-        template = emailTemplates.weeklyReport.template;
-        break;
-      default:
-        return `<p>${data.message}</p>`;
-    }
-
-    try {
-      const compiledTemplate = handlebars.compile(template);
-      return compiledTemplate(data);
-    } catch (error) {
-      console.error('Erreur compilation template:', error);
-      return `<p>${data.message}</p>`;
-    }
-  }
-
-  // Générer le message SMS à partir d'un template
+  // Générer le message SMS à partir d'un template (conservé)
   private static generateSMSFromTemplate(type: NotificationType, data: any): string | null {
+    if (!smsTemplates) {
+      return `${data.title}: ${data.message}`;
+    }
+
     switch (type) {
       case NotificationType.INTERVIEW_REMINDER:
-        return smsTemplates.interviewReminder(data);
+        return smsTemplates.interviewReminder?.(data) || `Rappel: entretien ${data.title}`;
       case NotificationType.DEADLINE_ALERT:
-        return smsTemplates.applicationDeadline(data);
+        return smsTemplates.applicationDeadline?.(data) || `Alerte: ${data.message}`;
       default:
-        return smsTemplates.quickUpdate(data);
+        return smsTemplates.quickUpdate?.(data) || `${data.title}: ${data.message}`;
     }
   }
+
+  // === MÉTHODES DE GESTION DES NOTIFICATIONS (conservées) ===
 
   // Récupérer les notifications d'un utilisateur
   static async getUserNotifications(

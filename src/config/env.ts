@@ -40,12 +40,9 @@ export const config = {
   },
 
   // Configuration email
-  emailHost: process.env.EMAIL_HOST || 'smtp.gmail.com',
-  emailPort: parseInt(process.env.EMAIL_PORT || '587', 10),
-  emailSecure: process.env.EMAIL_SECURE === 'true',
-  emailUser: process.env.EMAIL_USER || '',
-  emailPassword: process.env.EMAIL_PASSWORD || '',
-  emailFrom: process.env.EMAIL_FROM || 'Job Tracker <noreply@jobtracker.com>',
+  resendApiKey: process.env.RESEND_API_KEY || '',
+  resendDomain: process.env.RESEND_DOMAIN || '',
+  emailFrom: process.env.EMAIL_FROM || 'Candi Tracker <onboarding@candi-tracker-mail.joeltech.dev>',
   
   // Configuration SMS
   twilioAccountSid: process.env.TWILIO_ACCOUNT_SID || '',
