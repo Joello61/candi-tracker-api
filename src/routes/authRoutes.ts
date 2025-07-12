@@ -15,6 +15,9 @@ import {
   linkedinCallback,
   linkSocialAccount,
   unlinkSocialAccount,
+  forgotPassword,
+  resetPassword,
+  verifyResetCode,
 } from '../controllers/authController';
 import { authenticate } from '../middleware/auth';
 import { authLimiter, registerLimiter } from '../middleware/rateLimiter';
@@ -63,5 +66,14 @@ router.post('/link-social', authenticate, linkSocialAccount);
 
 // Délier un compte social
 router.post('/unlink-social', authenticate, unlinkSocialAccount);
+
+// Demander un code de réinitialisation
+router.post('/forgot-password', authLimiter, forgotPassword);
+
+// Réinitialiser le mot de passe avec le code
+router.post('/reset-password', authLimiter, resetPassword);
+
+// Vérifier la validité d'un code de réinitialisation (optionnel)
+router.post('/verify-reset-code', authLimiter, verifyResetCode);
 
 export default router;

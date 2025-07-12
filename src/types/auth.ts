@@ -77,7 +77,9 @@ export enum AuthStep {
   LOGIN = 'LOGIN',
   EMAIL_VERIFICATION = 'EMAIL_VERIFICATION',
   TWO_FACTOR_AUTH = 'TWO_FACTOR_AUTH',
-  COMPLETED = 'COMPLETED'
+  COMPLETED = 'COMPLETED',
+  FORGOT_PASSWORD = 'FORGOT_PASSWORD',      // NOUVEAU
+  RESET_PASSWORD = 'RESET_PASSWORD',     // NOUVEAU
 }
 
 export interface AuthFlowState {
@@ -126,6 +128,75 @@ export interface ResendCodeResponse {
   data?: {
     nextAllowedAt?: string;
   };
+}
+
+export interface ForgotPasswordRequest {
+  email: string;
+}
+
+// Requête de réinitialisation avec code
+export interface ResetPasswordRequest {
+  email: string;
+  code: string;
+  newPassword: string;
+}
+
+// Requête de vérification de code de réinitialisation
+export interface VerifyResetCodeRequest {
+  email: string;
+  code: string;
+}
+
+// Réponse de demande de réinitialisation
+export interface ForgotPasswordResponse {
+  message: string;
+  data: {
+    email: string;
+    codeRequested: boolean;
+  };
+}
+
+// Réponse de réinitialisation réussie
+export interface ResetPasswordResponse {
+  message: string;
+  data: AuthResponse; // L'utilisateur est automatiquement connecté
+}
+
+// Réponse de vérification de code
+export interface VerifyResetCodeResponse {
+  message: string;
+  data: {
+    valid: boolean;
+    expiresAt: string;
+    remainingAttempts: number;
+  };
+}
+
+// Codes d'erreur spécifiques au reset password
+export enum PasswordResetErrorCode {
+  INVALID_RESET_CODE = 'INVALID_RESET_CODE',
+  TOO_MANY_ATTEMPTS = 'TOO_MANY_ATTEMPTS',
+  ACCOUNT_DISABLED = 'ACCOUNT_DISABLED',
+  EMAIL_NOT_FOUND = 'EMAIL_NOT_FOUND',
+}
+
+// État du flow forgot password
+export interface ForgotPasswordFlowState {
+  step: AuthStep.FORGOT_PASSWORD | AuthStep.RESET_PASSWORD;
+  email?: string;
+  codeRequested?: boolean;
+  codeVerified?: boolean;
+}
+
+// Réponses d'erreur spécifiques
+export interface ForgotPasswordErrorResponse {
+  error: string;
+  code: PasswordResetErrorCode | AuthErrorCode;
+}
+
+export interface ResetPasswordErrorResponse {
+  error: string;
+  code: PasswordResetErrorCode | AuthErrorCode;
 }
 
 // Étendre l'interface Express User pour Passport (OAuth)

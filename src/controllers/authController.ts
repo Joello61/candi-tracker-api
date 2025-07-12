@@ -1,6 +1,6 @@
 import { Request, Response, NextFunction } from 'express';
 import { prisma } from '../config/database';
-import { registerSchema, loginSchema } from '../utils/validation';
+import { registerSchema, loginSchema, resetPasswordSchema, forgotPasswordSchema } from '../utils/validation';
 import { hashPassword, comparePassword, generateToken } from '../utils/auth';
 import { AuthenticatedRequest, AuthResponse } from '../types/auth';
 import { ZodError } from 'zod';
@@ -794,6 +794,296 @@ export const refreshToken = async (req: AuthenticatedRequest, res: Response): Pr
   } catch (error) {
     console.error('Erreur lors du rafraîchissement du token:', error);
     res.status(500).json({ 
+      error: 'Erreur interne du serveur',
+      code: 'INTERNAL_ERROR'
+    });
+  }
+};
+
+/**
+ * Initier la réinitialisation de mot de passe (forgot password)
+ */
+export const forgotPassword = async (req: Request, res: Response): Promise<void> => {
+  try {
+    // Validation des données
+    const validatedData = forgotPasswordSchema.parse(req.body);
+    const { email } = validatedData;
+
+    // Chercher l'utilisateur par email
+    const user = await prisma.user.findUnique({
+      where: { email },
+      select: {
+        id: true,
+        email: true,
+        name: true,
+        isActive: true,
+        provider: true,
+      }
+    });
+
+    // IMPORTANT : Toujours renvoyer une réponse positive pour éviter l'énumération d'emails
+    const successResponse = {
+      message: 'Si cette adresse email existe dans notre système, un code de réinitialisation a été envoyé.',
+      data: {
+        email: email,
+        codeRequested: true
+      }
+    };
+
+    // Si l'utilisateur n'existe pas, on répond quand même positivement
+    if (!user) {
+      res.json(successResponse);
+      return;
+    }
+
+    // Vérifier si le compte est actif
+    if (!user.isActive) {
+      res.json(successResponse);
+      return;
+    }
+
+    // Vérifier que c'est un compte avec mot de passe (pas uniquement social)
+    if (user.provider && user.provider !== 'local') {
+      // Pour les comptes sociaux purs, on peut soit :
+      // 1. Envoyer quand même le code pour permettre d'ajouter un mot de passe
+      // 2. Ou renvoyer la réponse standard
+      // Ici on choisit l'option 1 pour plus de flexibilité
+    }
+
+    try {
+      // Créer et envoyer le code de réinitialisation
+      const result = await VerificationService.createAndSendCode({
+        userId: user.id,
+        type: 'PASSWORD_RESET',
+        method: 'EMAIL',
+        target: user.email
+      });
+
+      if (result.success) {
+        console.log(`Code de réinitialisation envoyé à ${user.email}`);
+      } else {
+        console.error('Erreur envoi code réinitialisation:', result.message);
+        // Même en cas d'erreur d'envoi, on renvoie la réponse positive
+      }
+    } catch (error) {
+      console.error('Erreur lors de la création du code de réinitialisation:', error);
+      // On continue et renvoie la réponse positive
+    }
+
+    res.json(successResponse);
+
+  } catch (error) {
+    if (error instanceof ZodError) {
+      res.status(400).json({
+        error: 'Données invalides',
+        details: error.errors.map(err => ({
+          field: err.path.join('.'),
+          message: err.message
+        })),
+        code: 'VALIDATION_ERROR'
+      });
+      return;
+    }
+
+    console.error('Erreur lors de la demande de réinitialisation:', error);
+    res.status(500).json({ 
+      error: 'Erreur interne du serveur',
+      code: 'INTERNAL_ERROR'
+    });
+  }
+};
+
+/**
+ * Vérifier le code de réinitialisation ET réinitialiser le mot de passe
+ */
+export const resetPassword = async (req: Request, res: Response): Promise<void> => {
+  try {
+    // Validation des données
+    const validatedData = resetPasswordSchema.parse(req.body);
+    const { email, code, newPassword } = validatedData;
+
+    // Chercher l'utilisateur
+    const user = await prisma.user.findUnique({
+      where: { email },
+      select: {
+        id: true,
+        email: true,
+        name: true,
+        isActive: true,
+        role: true,
+      }
+    });
+
+    if (!user) {
+      res.status(400).json({
+        error: 'Code invalide ou expiré',
+        code: 'INVALID_RESET_CODE'
+      });
+      return;
+    }
+
+    if (!user.isActive) {
+      res.status(403).json({
+        error: 'Compte désactivé. Contactez l\'administrateur.',
+        code: 'ACCOUNT_DISABLED'
+      });
+      return;
+    }
+
+    // Vérifier le code de réinitialisation
+    const verificationResult = await VerificationService.verifyCode(
+      user.id,
+      code,
+      'PASSWORD_RESET'
+    );
+
+    if (!verificationResult.success) {
+      res.status(400).json({
+        error: verificationResult.message,
+        code: 'INVALID_RESET_CODE'
+      });
+      return;
+    }
+
+    // Hasher le nouveau mot de passe
+    const hashedPassword = await hashPassword(newPassword);
+
+    // Mettre à jour le mot de passe et marquer comme compte local
+    const updatedUser = await prisma.user.update({
+      where: { id: user.id },
+      data: { 
+        password: hashedPassword,
+        provider: 'local', // S'assurer que le compte devient local
+        lastLoginAt: new Date()
+      },
+      select: {
+        id: true,
+        email: true,
+        name: true,
+        role: true,
+        isActive: true,
+        emailVerified: true,
+      }
+    });
+
+    // Invalider tous les autres codes de réinitialisation pour cet utilisateur
+    await prisma.verificationCode.updateMany({
+      where: {
+        userId: user.id,
+        type: 'PASSWORD_RESET',
+        isUsed: false
+      },
+      data: { isUsed: true }
+    });
+
+    // Générer un token de connexion automatique
+    const token = generateToken(updatedUser.id, updatedUser.email, updatedUser.role);
+
+    const response: AuthResponse = {
+      user: updatedUser,
+      token,
+    };
+
+    res.json({
+      message: 'Mot de passe réinitialisé avec succès. Vous êtes maintenant connecté.',
+      data: response
+    });
+
+  } catch (error) {
+    if (error instanceof ZodError) {
+      res.status(400).json({
+        error: 'Données invalides',
+        details: error.errors.map(err => ({
+          field: err.path.join('.'),
+          message: err.message
+        })),
+        code: 'VALIDATION_ERROR'
+      });
+      return;
+    }
+
+    console.error('Erreur lors de la réinitialisation:', error);
+    res.status(500).json({ 
+      error: 'Erreur interne du serveur',
+      code: 'INTERNAL_ERROR'
+    });
+  }
+};
+
+/**
+ * Vérifier la validité d'un code de réinitialisation (optionnel - pour validation côté frontend)
+ */
+export const verifyResetCode = async (req: Request, res: Response): Promise<void> => {
+  try {
+    const { email, code } = req.body;
+
+    if (!email || !code) {
+      res.status(400).json({
+        error: 'Email et code requis',
+        code: 'MISSING_PARAMETERS'
+      });
+      return;
+    }
+
+    // Chercher l'utilisateur
+    const user = await prisma.user.findUnique({
+      where: { email },
+      select: { id: true, isActive: true }
+    });
+
+    if (!user || !user.isActive) {
+      res.status(400).json({
+        error: 'Code invalide ou expiré',
+        code: 'INVALID_RESET_CODE'
+      });
+      return;
+    }
+
+    // Vérifier si le code existe et est valide (sans le marquer comme utilisé)
+    const verificationCode = await prisma.verificationCode.findFirst({
+      where: {
+        userId: user.id,
+        code,
+        type: 'PASSWORD_RESET',
+        isUsed: false,
+        expiresAt: { gt: new Date() }
+      },
+      select: {
+        id: true,
+        attempts: true,
+        maxAttempts: true,
+        expiresAt: true
+      }
+    });
+
+    if (!verificationCode) {
+      res.status(400).json({
+        error: 'Code invalide ou expiré',
+        code: 'INVALID_RESET_CODE'
+      });
+      return;
+    }
+
+    if (verificationCode.attempts >= verificationCode.maxAttempts) {
+      res.status(400).json({
+        error: 'Trop de tentatives. Demandez un nouveau code.',
+        code: 'TOO_MANY_ATTEMPTS'
+      });
+      return;
+    }
+
+    res.json({
+      message: 'Code valide',
+      data: {
+        valid: true,
+        expiresAt: verificationCode.expiresAt.toISOString(),
+        remainingAttempts: verificationCode.maxAttempts - verificationCode.attempts
+      }
+    });
+
+  } catch (error) {
+    console.error('Erreur vérification code reset:', error);
+    res.status(500).json({
       error: 'Erreur interne du serveur',
       code: 'INTERNAL_ERROR'
     });
